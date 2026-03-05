@@ -1,4 +1,4 @@
-import { Notice, SuggestModal, TFile } from 'obsidian'
+import { Menu, Notice, SuggestModal, TFile } from 'obsidian'
 import type IggyNotePlugin from './main'
 import { preprocessAudio } from './audio/preprocessor'
 import { OpenAIWhisperProvider } from './audio/providers/openai'
@@ -119,6 +119,43 @@ class AudioFileSuggestModal extends SuggestModal<TFile> {
   onChooseSuggestion(file: TFile): void {
     processAudioFile(this.plugin, file)
   }
+}
+
+// ── Ribbon / Menu Entry Points ────────────────────────────────────────────────
+
+export function openAudioFilePicker(plugin: IggyNotePlugin): void {
+  new AudioFileSuggestModal(plugin).open()
+}
+
+export function registerMenus(plugin: IggyNotePlugin): void {
+  // File explorer context menu — only shown for audio files
+  plugin.registerEvent(
+    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+      if (!(file instanceof TFile)) return
+      if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
+      menu.addItem((item) =>
+        item
+          .setTitle('Process with Iggy Note')
+          .setIcon('mic')
+          .onClick(() => processAudioFile(plugin, file))
+      )
+    })
+  )
+
+  // Editor context menu — only shown when the active file is an audio file
+  plugin.registerEvent(
+    plugin.app.workspace.on('editor-menu', (menu: Menu, _editor, view) => {
+      const file = view.file
+      if (!file) return
+      if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
+      menu.addItem((item) =>
+        item
+          .setTitle('Process with Iggy Note')
+          .setIcon('mic')
+          .onClick(() => processAudioFile(plugin, file))
+      )
+    })
+  )
 }
 
 // ── Command Registration ──────────────────────────────────────────────────────

@@ -1,14 +1,16 @@
 import { Plugin } from 'obsidian'
 import { type IggyNoteSettings, DEFAULT_SETTINGS } from './settings'
 import { IggyNoteSettingsTab } from './settings-tab'
-import { registerCommands } from './commands'
+import { registerCommands, registerMenus, openAudioFilePicker } from './commands'
 
 export default class IggyNotePlugin extends Plugin {
   settings!: IggyNoteSettings
 
   async onload(): Promise<void> {
     await this.loadSettings()
+    this.addRibbonIcon('mic', 'Process audio with Iggy Note', () => openAudioFilePicker(this))
     registerCommands(this)
+    registerMenus(this)
     this.addSettingTab(new IggyNoteSettingsTab(this.app, this))
     console.log('[Iggy Note] Plugin loaded')
   }

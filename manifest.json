@@ -1,0 +1,10 @@
+{
+  "id": "iggy-note",
+  "name": "Iggy Note",
+  "version": "0.1.0",
+  "minAppVersion": "1.0.0",
+  "description": "Record → transcribe → AI structured notes, right in your vault. Bring your own API keys.",
+  "author": "Andrew Lassetter",
+  "authorUrl": "https://iggynote.com",
+  "isDesktopOnly": true
+}

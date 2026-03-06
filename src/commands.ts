@@ -16,36 +16,36 @@ async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<vo
 
   // Validate required keys before starting
   if (settings.transcriptionProvider === 'openai' && !settings.openaiKey) {
-    new Notice('Iggy Note: OpenAI API key required. Open plugin settings to add it.', 6000)
+    new Notice('Igggy: OpenAI API key required. Open plugin settings to add it.', 6000)
     return
   }
   if (settings.transcriptionProvider === 'deepgram' && !settings.deepgramKey) {
-    new Notice('Iggy Note: Deepgram API key required. Open plugin settings to add it.', 6000)
+    new Notice('Igggy: Deepgram API key required. Open plugin settings to add it.', 6000)
     return
   }
   if (settings.summarizationProvider === 'anthropic' && !settings.anthropicKey) {
-    new Notice('Iggy Note: Anthropic API key required. Open plugin settings to add it.', 6000)
+    new Notice('Igggy: Anthropic API key required. Open plugin settings to add it.', 6000)
     return
   }
   if (settings.summarizationProvider === 'openai' && !settings.openaiKey) {
-    new Notice('Iggy Note: OpenAI API key required. Open plugin settings to add it.', 6000)
+    new Notice('Igggy: OpenAI API key required. Open plugin settings to add it.', 6000)
     return
   }
 
   let step = 'reading file'
   try {
-    new Notice(`Iggy Note: Reading "${file.name}"…`)
+    new Notice(`Igggy: Reading "${file.name}"…`)
     const rawBuffer = await app.vault.readBinary(file)
 
     step = 'pre-processing audio'
-    new Notice('Iggy Note: Pre-processing audio…')
+    new Notice('Igggy: Pre-processing audio…')
     const processed = await preprocessAudio(rawBuffer, file.name)
     if (processed.wasCompressed) {
-      new Notice(`Iggy Note: Compressed ${formatBytes(rawBuffer.byteLength)} → ${formatBytes(processed.buffer.byteLength)}`)
+      new Notice(`Igggy: Compressed ${formatBytes(rawBuffer.byteLength)} → ${formatBytes(processed.buffer.byteLength)}`)
     }
 
     step = 'transcribing'
-    new Notice('Iggy Note: Transcribing (this may take up to a minute for longer recordings)…')
+    new Notice('Igggy: Transcribing (this may take up to a minute for longer recordings)…')
     const transcriptionProvider =
       settings.transcriptionProvider === 'deepgram'
         ? new DeepgramProvider(settings.deepgramKey)
@@ -57,7 +57,7 @@ async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<vo
     )
 
     step = 'generating note'
-    new Notice('Iggy Note: Generating structured note…')
+    new Notice('Igggy: Generating structured note…')
     const summarizationProvider =
       settings.summarizationProvider === 'anthropic'
         ? new ClaudeProvider(settings.anthropicKey)
@@ -80,7 +80,7 @@ async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<vo
       embedAudio: settings.embedAudio,
     })
 
-    new Notice(`Iggy Note: ✓ Created "${createdFile.name}"`, 6000)
+    new Notice(`Igggy: ✓ Created "${createdFile.name}"`, 6000)
 
     // Open the generated note
     const leaf = app.workspace.getLeaf(false)
@@ -88,8 +88,8 @@ async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<vo
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const friendlyMessage = friendlyError(message, step)
-    console.error(`[Iggy Note] Error during "${step}":`, err)
-    new Notice(`Iggy Note: Failed during ${step} — ${friendlyMessage}`, 10000)
+    console.error(`[Igggy] Error during "${step}":`, err)
+    new Notice(`Igggy: Failed during ${step} — ${friendlyMessage}`, 10000)
   }
 }
 
@@ -139,7 +139,7 @@ export function registerMenus(plugin: IggyNotePlugin): void {
       if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
       menu.addItem((item) =>
         item
-          .setTitle('Process with Iggy Note')
+          .setTitle('Process with Igggy')
           .setIcon('mic')
           .onClick(() => processAudioFile(plugin, file))
       )
@@ -154,7 +154,7 @@ export function registerMenus(plugin: IggyNotePlugin): void {
       if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
       menu.addItem((item) =>
         item
-          .setTitle('Process with Iggy Note')
+          .setTitle('Process with Igggy')
           .setIcon('mic')
           .onClick(() => processAudioFile(plugin, file))
       )

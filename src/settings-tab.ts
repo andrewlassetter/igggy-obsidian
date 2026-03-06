@@ -13,7 +13,7 @@ export class IggyNoteSettingsTab extends PluginSettingTab {
     const { containerEl } = this
     containerEl.empty()
 
-    containerEl.createEl('h2', { text: 'Iggy Note' })
+    containerEl.createEl('h2', { text: 'Igggy' })
 
     // ── Transcription ──────────────────────────────────────────────
     containerEl.createEl('h3', { text: 'Transcription' })
@@ -96,10 +96,10 @@ export class IggyNoteSettingsTab extends PluginSettingTab {
       .setDesc("Vault folder where notes are created. Will be created automatically if it doesn't exist.")
       .addText((text) =>
         text
-          .setPlaceholder('Iggy Notes')
+          .setPlaceholder('Igggy')
           .setValue(this.plugin.settings.outputFolder)
           .onChange(async (value) => {
-            this.plugin.settings.outputFolder = value.trim() || 'Iggy Notes'
+            this.plugin.settings.outputFolder = value.trim() || 'Igggy'
             await this.plugin.saveSettings()
           })
       )

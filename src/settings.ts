@@ -9,7 +9,7 @@ export interface IggyNoteSettings {
   anthropicKey: string
 
   // Output
-  outputFolder: string    // vault folder, e.g. "Iggy Notes"
+  outputFolder: string    // vault folder, e.g. "Igggy"
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
 
   // Paid
@@ -22,7 +22,7 @@ export const DEFAULT_SETTINGS: IggyNoteSettings = {
   openaiKey: '',
   deepgramKey: '',
   anthropicKey: '',
-  outputFolder: 'Iggy Notes',
+  outputFolder: 'Igggy',
   embedAudio: true,
   licenseKey: '',
 }

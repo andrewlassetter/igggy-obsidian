@@ -23,7 +23,7 @@ export function generateMarkdown(data: NoteTemplateData): string {
     `type: ${noteType}`,
     durationStr ? `duration: ${durationStr}` : null,
     audioPath ? `source: "${audioPath}"` : null,
-    `tags: [iggy-note, ${noteType.toLowerCase()}]`,
+    `tags: [igggy, ${noteType.toLowerCase()}]`,
     '---',
   ].filter(Boolean) as string[]
   const frontmatter = frontmatterLines.join('\n')

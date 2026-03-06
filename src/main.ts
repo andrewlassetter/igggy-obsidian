@@ -8,15 +8,15 @@ export default class IggyNotePlugin extends Plugin {
 
   async onload(): Promise<void> {
     await this.loadSettings()
-    this.addRibbonIcon('audio-waveform', 'Process audio with Iggy Note', () => openAudioFilePicker(this))
+    this.addRibbonIcon('audio-waveform', 'Process audio with Igggy', () => openAudioFilePicker(this))
     registerCommands(this)
     registerMenus(this)
     this.addSettingTab(new IggyNoteSettingsTab(this.app, this))
-    console.log('[Iggy Note] Plugin loaded')
+    console.log('[Igggy] Plugin loaded')
   }
 
   onunload(): void {
-    console.log('[Iggy Note] Plugin unloaded')
+    console.log('[Igggy] Plugin unloaded')
   }
 
   async loadSettings(): Promise<void> {

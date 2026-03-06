@@ -1,5 +1,5 @@
 import { Menu, Notice, SuggestModal, TFile } from 'obsidian'
-import type IggyNotePlugin from './main'
+import type IgggyPlugin from './main'
 import { preprocessAudio } from './audio/preprocessor'
 import { OpenAIWhisperProvider } from './audio/providers/openai'
 import { DeepgramProvider } from './audio/providers/deepgram'
@@ -11,7 +11,7 @@ const AUDIO_EXTENSIONS = new Set(['m4a', 'mp3', 'wav', 'webm', 'ogg', 'flac', 'a
 
 // ── Pipeline ──────────────────────────────────────────────────────────────────
 
-async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<void> {
+async function processAudioFile(plugin: IgggyPlugin, file: TFile): Promise<void> {
   const { settings, app } = plugin
 
   // Validate required keys before starting
@@ -97,7 +97,7 @@ async function processAudioFile(plugin: IggyNotePlugin, file: TFile): Promise<vo
 
 class AudioFileSuggestModal extends SuggestModal<TFile> {
   constructor(
-    private plugin: IggyNotePlugin
+    private plugin: IgggyPlugin
   ) {
     super(plugin.app)
     this.setPlaceholder('Type to filter audio files…')
@@ -117,7 +117,7 @@ class AudioFileSuggestModal extends SuggestModal<TFile> {
 
   renderSuggestion(file: TFile, el: HTMLElement): void {
     el.createEl('div', { text: file.name })
-    el.createEl('small', { text: file.parent?.path ?? '', cls: 'iggy-note-file-path' })
+    el.createEl('small', { text: file.parent?.path ?? '', cls: 'igggy-file-path' })
   }
 
   onChooseSuggestion(file: TFile): void {
@@ -127,11 +127,11 @@ class AudioFileSuggestModal extends SuggestModal<TFile> {
 
 // ── Ribbon / Menu Entry Points ────────────────────────────────────────────────
 
-export function openAudioFilePicker(plugin: IggyNotePlugin): void {
+export function openAudioFilePicker(plugin: IgggyPlugin): void {
   new AudioFileSuggestModal(plugin).open()
 }
 
-export function registerMenus(plugin: IggyNotePlugin): void {
+export function registerMenus(plugin: IgggyPlugin): void {
   // File explorer context menu — only shown for audio files
   plugin.registerEvent(
     plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
@@ -164,7 +164,7 @@ export function registerMenus(plugin: IggyNotePlugin): void {
 
 // ── Command Registration ──────────────────────────────────────────────────────
 
-export function registerCommands(plugin: IggyNotePlugin): void {
+export function registerCommands(plugin: IgggyPlugin): void {
   // Process the currently focused audio file
   plugin.addCommand({
     id: 'process-active-file',

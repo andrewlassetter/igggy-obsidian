@@ -51,7 +51,7 @@ _(nothing currently active)_
 
 ### Mandatory Before Marketplace Submission
 - [ ] **E2E validation** — test all 6 scenarios in a live Obsidian vault (see below)
-- [ ] **`npm run build`** — confirm zero TS errors, `main.js` up to date
+- [x] **`npm run build`** — confirmed clean, zero TS errors (2026-03-06)
 - [ ] **Create GitHub release `0.1.0`** — tag must match manifest exactly (no `v` prefix); upload 3 assets individually: `manifest.json`, `main.js`, `styles.css`
 - [ ] **Submit PR to obsidianmd/obsidian-releases** — add entry to `community-plugins.json`; respond to ObsidianReviewBot within 6 hours if flagged
 
@@ -93,7 +93,7 @@ _(nothing currently active)_
 - Featurebase feedback board: Feature Requests + Bug Reports boards, public roadmap
 
 ### Cross-Device Sync (Sync Architecture doc)
-- `iggy_id` UUID injected into frontmatter at note creation (decouples identity from file path)
+- `igggy_id` UUID injected into frontmatter at note creation (decouples identity from file path)
 - `synced_at` frontmatter field
 - Local `index.db` (SQLite) tracking UUID → vault path mapping
 - Vault file watcher: `vault.on('rename', ...)` to remap paths on move

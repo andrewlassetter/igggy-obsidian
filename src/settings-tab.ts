@@ -1,10 +1,10 @@
 import { App, PluginSettingTab, Setting } from 'obsidian'
-import type IggyNotePlugin from './main'
+import type IgggyPlugin from './main'
 
-export class IggyNoteSettingsTab extends PluginSettingTab {
-  plugin: IggyNotePlugin
+export class IgggySettingsTab extends PluginSettingTab {
+  plugin: IgggyPlugin
 
-  constructor(app: App, plugin: IggyNotePlugin) {
+  constructor(app: App, plugin: IgggyPlugin) {
     super(app, plugin)
     this.plugin = plugin
   }

@@ -1,4 +1,4 @@
-export interface IggyNoteSettings {
+export interface IgggySettings {
   // Transcription
   transcriptionProvider: 'openai' | 'deepgram'
   openaiKey: string       // used for Whisper and optionally GPT-4o
@@ -13,7 +13,7 @@ export interface IggyNoteSettings {
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
 }
 
-export const DEFAULT_SETTINGS: IggyNoteSettings = {
+export const DEFAULT_SETTINGS: IgggySettings = {
   transcriptionProvider: 'openai',
   summarizationProvider: 'openai',
   openaiKey: '',

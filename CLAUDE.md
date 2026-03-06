@@ -27,7 +27,7 @@ Audio files in the user's Obsidian vault are selected via a fuzzy modal or conte
 | File | Purpose |
 |---|---|
 | `src/main.ts` | Plugin entry: registers ribbon icon, commands, settings tab |
-| `src/settings.ts` | `IggyNoteSettings` interface + `DEFAULT_SETTINGS` |
+| `src/settings.ts` | `IgggySettings` interface + `DEFAULT_SETTINGS` |
 | `src/settings-tab.ts` | Settings UI — provider dropdowns, API key inputs, output folder |
 | `src/commands.ts` | `registerCommands`, `registerMenus`, `openAudioFilePicker` |
 | `src/audio/preprocessor.ts` | Web Audio API + lamejs: compress audio to 32kbps MP3 before upload |

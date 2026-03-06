@@ -11,9 +11,6 @@ export interface IggyNoteSettings {
   // Output
   outputFolder: string    // vault folder, e.g. "Igggy"
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
-
-  // Paid
-  licenseKey: string      // Pro BYOK tier — validated against backend (placeholder in v1)
 }
 
 export const DEFAULT_SETTINGS: IggyNoteSettings = {
@@ -24,5 +21,4 @@ export const DEFAULT_SETTINGS: IggyNoteSettings = {
   anthropicKey: '',
   outputFolder: 'Igggy',
   embedAudio: true,
-  licenseKey: '',
 }

@@ -1,7 +1,7 @@
 import type { TranscriptMeta } from '../prompt'
 
 export interface NoteContent {
-  noteType: 'MEETING' | 'ONE_ON_ONE' | 'MEMO' | 'JOURNAL'
+  noteType: 'MEETING' | 'ONE_ON_ONE' | 'MEMO'
   title: string
   summary: string
   keyTopics: Array<{ topic: string; bullets: string[] }>

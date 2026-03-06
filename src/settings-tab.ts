@@ -114,20 +114,5 @@ export class IggyNoteSettingsTab extends PluginSettingTab {
         })
       )
 
-    // ── Pro ─────────────────────────────────────────────────────────
-    containerEl.createEl('h3', { text: 'Pro BYOK' })
-
-    new Setting(containerEl)
-      .setName('License key')
-      .setDesc('Unlocks unlimited recordings, unified task list, and Deepgram diarization.')
-      .addText((text) =>
-        text
-          .setPlaceholder('IGGY-XXXX-XXXX-XXXX')
-          .setValue(this.plugin.settings.licenseKey)
-          .onChange(async (value) => {
-            this.plugin.settings.licenseKey = value.trim()
-            await this.plugin.saveSettings()
-          })
-      )
   }
 }

@@ -50,7 +50,7 @@ Return a JSON object with ALL of these fields:
 
   "summary": "2–3 concise sentences. High-level overview of what happened and the main outcome. Scannable at a glance.",
 
-  "keyHighlights": [
+  "keyTopics": [
     {
       "topic": "Primary topic or theme from the recording",
       "bullets": ["Concise point", "Another point — keep these tight"]
@@ -77,7 +77,7 @@ Return a JSON object with ALL of these fields:
 
 Rules — read carefully:
 - summary: 2–3 sentences only. High-level, scannable. Never a list.
-- keyHighlights: 3–6 topics covering the main threads. 2–4 concise bullets per topic. For memos, these are the main themes or ideas discussed.
+- keyTopics: 3–6 topics covering the main threads. 2–4 concise bullets per topic. For memos, these are the main themes or ideas discussed.
 - content: 2–4 prose paragraphs. For meetings, a narrative recap. For memos, the key ideas expanded. Always populate even if it covers similar ground to keyHighlights.
 - decisions: things explicitly decided, AND things completed or resolved during the recording (e.g. "deleted the project", "agreed to skip the release"). Stated as facts.
 - actionItems: ONLY work that remains to be done AFTER this recording ends. If something was completed, decided, or resolved during the recording itself — it belongs in decisions, NOT actionItems.

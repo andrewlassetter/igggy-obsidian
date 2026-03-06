@@ -9,6 +9,7 @@
  * paragraph is prefixed with [Speaker N] so the AI can attribute action items.
  */
 
+import { requestUrl } from 'obsidian'
 import type { TranscriptionProvider, TranscriptionResult } from './types'
 
 export class DeepgramProvider implements TranscriptionProvider {
@@ -26,21 +27,22 @@ export class DeepgramProvider implements TranscriptionProvider {
     const ext = filename.split('.').pop()?.toLowerCase() ?? 'mp3'
     const mimeType = MIME_TYPES[ext] ?? 'audio/mpeg'
 
-    const response = await fetch(`https://api.deepgram.com/v1/listen?${params}`, {
+    const response = await requestUrl({
+      url: `https://api.deepgram.com/v1/listen?${params}`,
       method: 'POST',
       headers: {
         Authorization: `Token ${this.apiKey}`,
         'Content-Type': mimeType,
       },
       body: audioBuffer,
+      throw: false,
     })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Deepgram API error ${response.status}: ${error}`)
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Deepgram API error ${response.status}: ${response.text}`)
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
     const paragraphs: DeepgramParagraph[] =
       data.results?.channels?.[0]?.alternatives?.[0]?.paragraphs?.paragraphs ?? []
     const durationSec = data.metadata?.duration

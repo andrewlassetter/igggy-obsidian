@@ -60,13 +60,7 @@ function parseNoteContent(text: string): NoteContent {
 
   const parsed = JSON.parse(cleaned)
 
-  // Claude uses "keyHighlights" in the prompt for clarity; map to "keyTopics"
-  if (parsed.keyHighlights && !parsed.keyTopics) {
-    parsed.keyTopics = parsed.keyHighlights
-    delete parsed.keyHighlights
-  }
-
-  // Ensure arrays exist even if Claude omits them
+  // Ensure arrays exist even if the model omits them
   parsed.keyTopics = parsed.keyTopics ?? []
   parsed.content = parsed.content ?? []
   parsed.decisions = parsed.decisions ?? []

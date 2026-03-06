@@ -53,11 +53,6 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
 function parseNoteContent(text: string): NoteContent {
   const parsed = JSON.parse(text.trim())
 
-  if (parsed.keyHighlights && !parsed.keyTopics) {
-    parsed.keyTopics = parsed.keyHighlights
-    delete parsed.keyHighlights
-  }
-
   parsed.keyTopics = parsed.keyTopics ?? []
   parsed.content = parsed.content ?? []
   parsed.decisions = parsed.decisions ?? []

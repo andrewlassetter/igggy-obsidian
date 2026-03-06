@@ -10,6 +10,9 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
     formData.append('model', 'whisper-1')
     formData.append('response_format', 'verbose_json')
 
+    // Uses fetch (not Obsidian's requestUrl) because requestUrl does not support
+    // FormData/multipart bodies. Electron's fetch is not subject to CORS for
+    // outbound requests to external APIs, so this is safe in practice.
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${this.apiKey}` },

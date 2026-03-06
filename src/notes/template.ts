@@ -11,7 +11,7 @@ export interface NoteTemplateData {
 
 export function generateMarkdown(data: NoteTemplateData): string {
   const { noteContent, date, transcript, durationSec, audioPath, embedAudio } = data
-  const { noteType, title, summary, keyTopics, decisions, actionItems } = noteContent
+  const { noteType, title, summary, content, keyTopics, decisions, actionItems } = noteContent
 
   const durationStr = durationSec ? `${Math.round(durationSec / 60)} min` : null
 
@@ -33,6 +33,9 @@ export function generateMarkdown(data: NoteTemplateData): string {
 
   // --- Summary ---
   const summarySection = `## Summary\n\n${summary}`
+
+  // --- Content (prose narrative paragraphs) ---
+  const contentSection = content.length > 0 ? content.join('\n\n') : null
 
   // --- Key Highlights ---
   const keyHighlightsSection =
@@ -70,6 +73,7 @@ export function generateMarkdown(data: NoteTemplateData): string {
     frontmatter,
     audioEmbed,
     summarySection,
+    contentSection,
     keyHighlightsSection,
     decisionsSection,
     actionItemsSection,

@@ -6,6 +6,7 @@
  * and avoids potential Node.js dependency issues in Obsidian/Electron.
  */
 
+import { requestUrl } from 'obsidian'
 import { buildPrompt } from '../prompt'
 import type { TranscriptMeta } from '../prompt'
 import type { SummarizationProvider, NoteContent } from './types'
@@ -16,7 +17,10 @@ export class ClaudeProvider implements SummarizationProvider {
   async summarize(transcript: string, meta?: TranscriptMeta): Promise<NoteContent> {
     const prompt = buildPrompt(meta)
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Use Obsidian's requestUrl instead of fetch — bypasses CORS restrictions
+    // that block direct renderer-process calls to api.anthropic.com
+    const response = await requestUrl({
+      url: 'https://api.anthropic.com/v1/messages',
       method: 'POST',
       headers: {
         'x-api-key': this.apiKey,
@@ -33,14 +37,14 @@ export class ClaudeProvider implements SummarizationProvider {
           },
         ],
       }),
+      throw: false,
     })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`Claude API error ${response.status}: ${error}`)
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`Claude API error ${response.status}: ${response.text}`)
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
     const text: string = data.content?.[0]?.type === 'text' ? data.content[0].text : ''
 
     return parseNoteContent(text)

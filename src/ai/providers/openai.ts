@@ -8,6 +8,7 @@
  *   - Model: gpt-4o-mini (cheaper, fast)
  */
 
+import { requestUrl } from 'obsidian'
 import { buildPrompt } from '../prompt'
 import type { TranscriptMeta } from '../prompt'
 import type { SummarizationProvider, NoteContent } from './types'
@@ -18,11 +19,13 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
   async summarize(transcript: string, meta?: TranscriptMeta): Promise<NoteContent> {
     const prompt = buildPrompt(meta)
 
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // Use Obsidian's requestUrl for consistency — avoids any future CORS issues
+    const response = await requestUrl({
+      url: 'https://api.openai.com/v1/chat/completions',
       method: 'POST',
       headers: {
         Authorization: `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
+        'content-type': 'application/json',
       },
       body: JSON.stringify({
         model: 'gpt-4o-mini',
@@ -33,14 +36,14 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
           { role: 'user', content: `Transcript:\n---\n${transcript}\n---` },
         ],
       }),
+      throw: false,
     })
 
-    if (!response.ok) {
-      const error = await response.text()
-      throw new Error(`OpenAI API error ${response.status}: ${error}`)
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`OpenAI API error ${response.status}: ${response.text}`)
     }
 
-    const data = await response.json()
+    const data = JSON.parse(response.text)
     const text: string = data.choices?.[0]?.message?.content ?? ''
 
     return parseNoteContent(text)

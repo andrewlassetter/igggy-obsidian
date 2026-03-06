@@ -43,6 +43,29 @@ Audio files in the user's Obsidian vault are selected via a fuzzy modal or conte
 | `manifest.json` | Plugin ID, name, version, min Obsidian version |
 | `esbuild.config.mjs` | Build config: entry `src/main.ts` → `main.js`, watch or production mode |
 
+## Conventions
+
+### Naming
+- Brand is **Igggy** (triple-g) — never "Iggy" in user-facing text, identifiers, filenames, or docs
+- TypeScript class/interface names: `IgggyPlugin`, `IgggySettings`, `IgggySettingsTab`
+- CSS classes: `igggy-*` prefix
+- Frontmatter field: `igggy_id` (triple-g, snake_case); generated via `crypto.randomUUID()`
+
+### Terminology
+- **Tasks** — always. Never "action items" in markdown section headers, UI text, or docs
+- **Key Highlights** — the rendered `## Key Highlights` section header (field name in code: `keyTopics`)
+- Note types: `MEETING`, `ONE_ON_ONE`, `MEMO`, `JOURNAL` (screaming snake case in code/frontmatter)
+
+### AI field names vs. display names (do not conflate)
+The prompt (`src/ai/prompt.ts`) asks the AI to return `keyTopics` and `actionItems` — these are the AI-facing JSON keys. They map to display names in `src/notes/template.ts`:
+- `keyTopics` → rendered as `## Key Highlights`
+- `actionItems` → rendered as `## Tasks`
+
+Do not rename the AI-facing field names in the prompt — it would break parsing of AI responses.
+
+### Sync with web app
+This plugin ports shared logic from `@igggy/core` (web app `packages/core/`) rather than consuming it as a dependency. When the web app changes `NoteContent` shape, prompt rules, or frontmatter schema, mirror the change here. Check `docs/PLUGIN-INTEGRATION.md` in the web app repo (`andrewlassetter/igggy`) for the living integration checklist.
+
 ## Docs (`/docs`)
 
 | File | Description |

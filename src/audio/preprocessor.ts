@@ -1,7 +1,7 @@
 /**
  * Audio pre-processor.
  *
- * Reduces large audio files before transcription using Web Audio API + lamejs.
+ * Reduces large audio files before transcription using Web Audio API + @breezystack/lamejs.
  * Avoids ffmpeg.wasm (~30MB) — lamejs is ~150KB, acceptable for Obsidian marketplace.
  *
  * Pipeline (for files > 10MB):
@@ -14,7 +14,7 @@
  * (Whisper internally works at 16kHz mono regardless of input quality).
  */
 
-import { Mp3Encoder } from 'lamejs'
+import { Mp3Encoder } from '@breezystack/lamejs'
 
 const SKIP_THRESHOLD_BYTES = 10 * 1024 * 1024  // 10MB
 const TARGET_SAMPLE_RATE = 16000

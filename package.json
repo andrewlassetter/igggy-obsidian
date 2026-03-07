@@ -8,7 +8,13 @@
     "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint src --ext .ts"
   },
-  "keywords": ["obsidian", "notes", "ai", "meeting", "transcription"],
+  "keywords": [
+    "obsidian",
+    "notes",
+    "ai",
+    "meeting",
+    "transcription"
+  ],
   "author": "Andrew Lassetter",
   "license": "MIT",
   "devDependencies": {
@@ -20,6 +26,6 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "lamejs": "^1.2.1"
+    "@breezystack/lamejs": "^1.2.7"
   }
 }

@@ -65,7 +65,7 @@ Process any audio file in your vault using any of three entry points:
 2. **Command palette** — run `Process audio file…` (file picker) or `Process active audio file` (when an audio file is open)
 3. **Right-click menu** — right-click any audio file in the file explorer and choose **Process with Igggy**
 
-Igggy shows progress notices at each step (reading → compressing → transcribing → generating → writing) and opens the finished note in the editor when done.
+When you trigger processing, a placeholder note is created immediately and opened in your editor. The note updates in real time as each stage completes — the title starts as the audio filename and renames itself to the AI-generated title when processing finishes. No toast notifications; the note itself is the status surface.
 
 ---
 

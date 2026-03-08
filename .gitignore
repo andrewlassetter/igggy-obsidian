@@ -3,3 +3,6 @@ main.js
 *.js.map
 .DS_Store
 data.json
+
+# Private project docs — tracked in the igggy web app repo instead
+docs/

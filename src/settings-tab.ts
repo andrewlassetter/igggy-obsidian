@@ -20,7 +20,6 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Mode')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('BYOK: use your own API keys. Hosted: use Igggy\'s keys (requires account).')
       .addDropdown((dd) =>
         dd
@@ -77,12 +76,10 @@ export class IgggySettingsTab extends PluginSettingTab {
       .setDesc(
         isConnected
           ? 'Paste fresh tokens any time to re-authenticate.'
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           : 'Open the Igggy web app and copy your session tokens.'
       )
       .addButton((btn) =>
         btn
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setButtonText('Open Igggy →')
           .onClick(() => {
             window.open(`${APP_URL}/auth/plugin-callback`, '_blank')
@@ -92,7 +89,6 @@ export class IgggySettingsTab extends PluginSettingTab {
     // Access token field
     new Setting(containerEl)
       .setName('Access token')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('Paste the access token from the Igggy plugin-callback page.')
       .addText((text) =>
         text
@@ -116,7 +112,6 @@ export class IgggySettingsTab extends PluginSettingTab {
     // Refresh token field
     new Setting(containerEl)
       .setName('Refresh token')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('Paste the refresh token from the Igggy plugin-callback page.')
       .addText((text) =>
         text
@@ -156,13 +151,10 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Provider')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('OpenAI Whisper works with just an OpenAI key. Deepgram adds speaker diarization.')
       .addDropdown((dd) =>
         dd
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .addOption('openai', 'OpenAI Whisper')
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .addOption('deepgram', 'Deepgram Nova-3')
           .setValue(this.plugin.settings.transcriptionProvider)
           .onChange(async (value) => {
@@ -172,9 +164,7 @@ export class IgggySettingsTab extends PluginSettingTab {
       )
 
     new Setting(containerEl)
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setName('OpenAI API key')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('Used for Whisper transcription and/or GPT-4o summarization.')
       .addText((text) => {
         text.inputEl.type = 'password'
@@ -189,7 +179,6 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Deepgram API key')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('Required when using Deepgram as the transcription provider.')
       .addText((text) => {
         text.inputEl.type = 'password'
@@ -207,13 +196,10 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Provider')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('GPT-4o Mini works with your OpenAI key. Claude Sonnet delivers higher quality notes.')
       .addDropdown((dd) =>
         dd
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .addOption('openai', 'GPT-4o Mini')
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .addOption('anthropic', 'Claude Sonnet')
           .setValue(this.plugin.settings.summarizationProvider)
           .onChange(async (value) => {
@@ -224,7 +210,6 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Anthropic API key')
-      // eslint-disable-next-line obsidianmd/ui/sentence-case
       .setDesc('Required when using Claude as the summarization provider.')
       .addText((text) => {
         text.inputEl.type = 'password'

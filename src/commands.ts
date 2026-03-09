@@ -433,7 +433,6 @@ export function registerMenus(plugin: IgggyPlugin): void {
       if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
       menu.addItem((item) =>
         item
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setTitle('Process with Igggy')
           .setIcon('mic')
           .onClick(() => { void processAudioFile(plugin, file) })
@@ -449,7 +448,6 @@ export function registerMenus(plugin: IgggyPlugin): void {
       if (!AUDIO_EXTENSIONS.has(file.extension.toLowerCase())) return
       menu.addItem((item) =>
         item
-          // eslint-disable-next-line obsidianmd/ui/sentence-case
           .setTitle('Process with Igggy')
           .setIcon('mic')
           .onClick(() => { void processAudioFile(plugin, file) })

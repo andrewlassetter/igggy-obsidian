@@ -156,7 +156,7 @@ export class RecordingView extends ItemView {
     }
 
     const btn = body.createEl('button', {
-      text: '⏺ Start Recording',
+      text: '⏺ start recording',
       cls: 'igggy-rv-btn-primary',
     })
     btn.disabled = !!keyError
@@ -196,7 +196,7 @@ export class RecordingView extends ItemView {
       return modeBtn
     })
 
-    body.createEl('button', { text: '↑ From file…', cls: 'igggy-rv-btn-secondary' })
+    body.createEl('button', { text: '↑ from file…', cls: 'igggy-rv-btn-secondary' })
       .addEventListener('click', () => openAudioFilePicker(this.plugin))
   }
 
@@ -208,28 +208,28 @@ export class RecordingView extends ItemView {
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer', text: '0:00' })
-    footer.createSpan({ cls: 'igggy-rv-waveform-label', text: '● Recording' })
+    footer.createSpan({ cls: 'igggy-rv-waveform-label', text: '● recording' })
     this.startTimer(timerEl)
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
 
     // Mute toggle — only shown when a mic stream is active ('mic' or 'both' modes)
     if (this.session?.hasMic()) {
-      const muteBtn = controls.createEl('button', { text: '🎙️ Mute', cls: 'igggy-rv-btn-secondary' })
+      const muteBtn = controls.createEl('button', { text: '🎙️ mute', cls: 'igggy-rv-btn-secondary' })
       muteBtn.addEventListener('click', () => {
         if (this.session?.isMuted()) {
           this.session.unmute()
-          muteBtn.textContent = '🎙️ Mute'
+          muteBtn.textContent = '🎙️ mute'
         } else {
           this.session?.mute()
-          muteBtn.textContent = '🔇 Unmute'
+          muteBtn.textContent = '🔇 unmute'
         }
       })
     }
 
-    controls.createEl('button', { text: '⏸ Pause', cls: 'igggy-rv-btn-secondary' })
+    controls.createEl('button', { text: '⏸ pause', cls: 'igggy-rv-btn-secondary' })
       .addEventListener('click', () => this.handlePause())
-    controls.createEl('button', { text: '■ Stop', cls: 'igggy-rv-btn-primary' })
+    controls.createEl('button', { text: '■ stop', cls: 'igggy-rv-btn-primary' })
       .addEventListener('click', () => { void this.handleStop() })
   }
 
@@ -244,14 +244,14 @@ export class RecordingView extends ItemView {
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer' })
     timerEl.textContent = this.formatSec(this.session?.getElapsedSec() ?? 0)
-    footer.createSpan({ cls: 'igggy-rv-waveform-label', text: '⏸ Paused' })
+    footer.createSpan({ cls: 'igggy-rv-waveform-label', text: '⏸ paused' })
     // Timer updates so the frozen time is accurate at the moment of resume
     this.startTimer(timerEl)
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
-    controls.createEl('button', { text: '▶ Resume', cls: 'igggy-rv-btn-secondary' })
+    controls.createEl('button', { text: '▶ resume', cls: 'igggy-rv-btn-secondary' })
       .addEventListener('click', () => this.handleResume())
-    controls.createEl('button', { text: '■ Stop', cls: 'igggy-rv-btn-primary' })
+    controls.createEl('button', { text: '■ stop', cls: 'igggy-rv-btn-primary' })
       .addEventListener('click', () => { void this.handleStop() })
   }
 

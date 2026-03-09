@@ -36,7 +36,6 @@ export default class IgggyPlugin extends Plugin {
     )
 
     // ── Ribbon icon ─────────────────────────────────────────────────────────────
-    // eslint-disable-next-line obsidianmd/ui/sentence-case
     this.addRibbonIcon('audio-waveform', 'Open Igggy recording panel', () =>
       void this.activateRecordingView()
     )

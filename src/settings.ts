@@ -19,6 +19,10 @@ export interface IgggySettings {
   hostedRefreshToken: string  // Supabase refresh_token
   hostedTokenExpiry: number   // Unix timestamp in ms when access_token expires
 
+  // ── Recording ────────────────────────────────────────────────────────────────
+
+  includeSystemAudio: boolean  // capture system audio alongside mic (triggers OS screen-picker)
+
   // ── Output ──────────────────────────────────────────────────────────────────
 
   outputFolder: string    // vault folder, e.g. "Igggy"
@@ -35,6 +39,7 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   hostedAccessToken: '',
   hostedRefreshToken: '',
   hostedTokenExpiry: 0,
+  includeSystemAudio: false,
   outputFolder: 'Igggy',
   embedAudio: true,
 }

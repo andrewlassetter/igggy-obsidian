@@ -37,6 +37,8 @@ import {
 export const RECORDING_VIEW_TYPE = 'igggy-recording'
 
 const BAR_COUNT = 28
+const SILENCE_THRESHOLD = 5      // max bin value (0–255) below which we consider it silence
+const SILENCE_DELAY_MS = 10_000  // wait 10 s after recording starts before checking
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -57,8 +59,9 @@ export class RecordingView extends ItemView {
 
   // ── State ──────────────────────────────────────────────────────────────────
   private state: ViewState = 'idle'
-  private recordingMode: RecordingMode = 'mic'
+  private recordingMode: RecordingMode = 'mic'  // set from settings at recording start
   private session: RecordingSession | null = null
+  private silenceWarningEl: HTMLElement | null = null
   private blob: Blob | null = null
   private placeholderFile: TFile | null = null
   private finalElapsed = 0
@@ -162,38 +165,26 @@ export class RecordingView extends ItemView {
     btn.disabled = !!keyError
     btn.addEventListener('click', () => { void this.handleStart() })
 
-    // ── Audio source selector ─────────────────────────────────────────────────
+    // ── System audio toggle ───────────────────────────────────────────────────
 
-    const sourceSection = body.createDiv({ cls: 'igggy-rv-source-section' })
-    sourceSection.createEl('p', { text: 'Audio source', cls: 'igggy-rv-source-label' })
+    const toggleRow = body.createDiv({ cls: 'igggy-rv-toggle-row' })
+    const checkbox = toggleRow.createEl('input', { cls: 'igggy-rv-toggle-checkbox' })
+    checkbox.type = 'checkbox'
+    checkbox.checked = this.plugin.settings.includeSystemAudio
+    const toggleLabel = toggleRow.createEl('label', { text: 'Include system audio' })
+    toggleLabel.htmlFor = 'igggy-system-audio'
+    checkbox.id = 'igggy-system-audio'
 
-    const sourceRow = sourceSection.createDiv({ cls: 'igggy-rv-source-row' })
-
-    const modes: { mode: RecordingMode; label: string }[] = [
-      { mode: 'mic', label: '🎙 Mic' },
-      { mode: 'system', label: '🖥 System' },
-      { mode: 'both', label: '🎙+🖥 Both' },
-    ]
-
-    const hintEl = sourceSection.createEl('p', {
-      text: 'Opens a screen picker — select the window with audio and check "Share audio".',
+    const hintEl = body.createEl('p', {
+      text: 'You\'ll be prompted to choose a window — check "Share audio".',
       cls: 'igggy-rv-source-hint',
     })
-    hintEl.style.display = this.recordingMode === 'mic' ? 'none' : ''
+    hintEl.style.display = checkbox.checked ? '' : 'none'
 
-    const modeBtns = modes.map(({ mode, label }) => {
-      const modeBtn = sourceRow.createEl('button', {
-        text: label,
-        cls: `igggy-rv-source-btn${this.recordingMode === mode ? ' is-selected' : ''}`,
-      })
-      modeBtn.addEventListener('click', () => {
-        this.recordingMode = mode
-        modeBtns.forEach((b, i) => {
-          b.classList.toggle('is-selected', modes[i].mode === mode)
-        })
-        hintEl.style.display = mode === 'mic' ? 'none' : ''
-      })
-      return modeBtn
+    checkbox.addEventListener('change', () => {
+      this.plugin.settings.includeSystemAudio = checkbox.checked
+      void this.plugin.saveSettings()
+      hintEl.style.display = checkbox.checked ? '' : 'none'
     })
 
     body.createEl('button', { text: '↑ from file…', cls: 'igggy-rv-btn-secondary' })
@@ -205,6 +196,16 @@ export class RecordingView extends ItemView {
   private renderActiveRecording(body: HTMLElement): void {
     const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform' })
     this.startCanvasWaveform(waveformEl)
+
+    // Silence warning — hidden initially, shown by startCanvasWaveform after 10 s of silence
+    const silenceMsg = this.recordingMode === 'both'
+      ? 'No audio detected — check your microphone and make sure "Share audio" was enabled'
+      : 'No audio detected — check your microphone'
+    this.silenceWarningEl = body.createEl('p', {
+      text: silenceMsg,
+      cls: 'igggy-rv-warning',
+    })
+    this.silenceWarningEl.style.display = 'none'
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer', text: '0:00' })
@@ -339,6 +340,8 @@ export class RecordingView extends ItemView {
     const hasRoundRect =
       typeof (ctx as unknown as { roundRect?: unknown }).roundRect === 'function'
 
+    const recordingStartMs = Date.now()
+
     const draw = (): void => {
       this.rafId = requestAnimationFrame(draw)
       analyser.getByteFrequencyData(freqData)
@@ -361,6 +364,15 @@ export class RecordingView extends ItemView {
           ctx.rect(x, y, 3, height)
         }
         ctx.fill()
+      }
+
+      // Silence detection — only active after the initial delay
+      if (this.silenceWarningEl && Date.now() - recordingStartMs > SILENCE_DELAY_MS) {
+        let maxVal = 0
+        for (let i = 0; i < freqData.length; i++) {
+          if (freqData[i] > maxVal) maxVal = freqData[i]
+        }
+        this.silenceWarningEl.style.display = maxVal < SILENCE_THRESHOLD ? '' : 'none'
       }
     }
 
@@ -393,6 +405,9 @@ export class RecordingView extends ItemView {
     }
 
     this.transition('requesting')
+
+    // Derive mode from persisted setting (mic-only or mic + system audio)
+    this.recordingMode = this.plugin.settings.includeSystemAudio ? 'both' : 'mic'
 
     // Acquire audio source(s) based on selected mode
     let session: RecordingSession
@@ -451,6 +466,7 @@ export class RecordingView extends ItemView {
     void setRecordingState(this.plugin.app, this.placeholderFile, 'paused')
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
+    this.silenceWarningEl = null  // cleared on transition; paused state has no warning
     this.transition('paused')
   }
 
@@ -465,6 +481,7 @@ export class RecordingView extends ItemView {
     if (!this.session || !this.placeholderFile) return
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
+    this.silenceWarningEl = null  // cleared on stop; stopped state has no warning
 
     this.finalElapsed = this.session.getElapsedSec()
     this.capturedAt = new Date()

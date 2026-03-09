@@ -213,50 +213,24 @@
   margin: 0;
 }
 
-/* ── Audio source selector (idle state) ────────────────────────────────────── */
+/* ── System audio toggle (idle state) ───────────────────────────────────────── */
 
-.igggy-rv-source-section {
+.igggy-rv-toggle-row {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
 }
 
-.igggy-rv-source-label {
-  font-size: 0.75em;
-  color: var(--text-faint);
-  margin: 0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.igggy-rv-source-row {
-  display: flex;
-  gap: 6px;
-}
-
-.igggy-rv-source-btn {
-  flex: 1;
-  padding: 6px 4px;
-  border-radius: 6px;
-  font-size: 0.8em;
-  font-weight: 500;
-  border: 1px solid var(--background-modifier-border);
-  background: var(--background-modifier-form-field);
+.igggy-rv-toggle-row label {
+  font-size: 0.85em;
   color: var(--text-muted);
   cursor: pointer;
-  text-align: center;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  user-select: none;
 }
 
-.igggy-rv-source-btn:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-}
-
-.igggy-rv-source-btn.is-selected {
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border-color: transparent;
+.igggy-rv-toggle-checkbox {
+  cursor: pointer;
+  margin: 0;
 }
 
 .igggy-rv-source-hint {

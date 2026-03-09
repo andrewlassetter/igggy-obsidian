@@ -20,7 +20,7 @@
 import { ItemView, Notice, WorkspaceLeaf } from 'obsidian'
 import type { TFile } from 'obsidian'
 import type IgggyPlugin from '../main'
-import { RecordingSession } from '../recording/session'
+import { RecordingSession, PickerCancelledError, type RecordingMode } from '../recording/session'
 import {
   validateKeys,
   openAudioFilePicker,
@@ -57,6 +57,7 @@ export class RecordingView extends ItemView {
 
   // ── State ──────────────────────────────────────────────────────────────────
   private state: ViewState = 'idle'
+  private recordingMode: RecordingMode = 'mic'
   private session: RecordingSession | null = null
   private blob: Blob | null = null
   private placeholderFile: TFile | null = null
@@ -117,7 +118,10 @@ export class RecordingView extends ItemView {
         this.renderIdle(body)
         break
       case 'requesting':
-        body.createEl('p', { text: 'Requesting microphone…', cls: 'igggy-rv-hint' })
+        body.createEl('p', {
+          text: this.recordingMode === 'mic' ? 'Requesting microphone…' : 'Opening screen picker…',
+          cls: 'igggy-rv-hint',
+        })
         break
       case 'recording':
         this.renderActiveRecording(body)
@@ -158,6 +162,40 @@ export class RecordingView extends ItemView {
     btn.disabled = !!keyError
     btn.addEventListener('click', () => { void this.handleStart() })
 
+    // ── Audio source selector ─────────────────────────────────────────────────
+
+    const sourceSection = body.createDiv({ cls: 'igggy-rv-source-section' })
+    sourceSection.createEl('p', { text: 'Audio source', cls: 'igggy-rv-source-label' })
+
+    const sourceRow = sourceSection.createDiv({ cls: 'igggy-rv-source-row' })
+
+    const modes: { mode: RecordingMode; label: string }[] = [
+      { mode: 'mic', label: '🎙 Mic' },
+      { mode: 'system', label: '🖥 System' },
+      { mode: 'both', label: '🎙+🖥 Both' },
+    ]
+
+    const hintEl = sourceSection.createEl('p', {
+      text: 'Opens a screen picker — select the window with audio and check "Share audio".',
+      cls: 'igggy-rv-source-hint',
+    })
+    hintEl.style.display = this.recordingMode === 'mic' ? 'none' : ''
+
+    const modeBtns = modes.map(({ mode, label }) => {
+      const modeBtn = sourceRow.createEl('button', {
+        text: label,
+        cls: `igggy-rv-source-btn${this.recordingMode === mode ? ' is-selected' : ''}`,
+      })
+      modeBtn.addEventListener('click', () => {
+        this.recordingMode = mode
+        modeBtns.forEach((b, i) => {
+          b.classList.toggle('is-selected', modes[i].mode === mode)
+        })
+        hintEl.style.display = mode === 'mic' ? 'none' : ''
+      })
+      return modeBtn
+    })
+
     body.createEl('button', { text: '↑ From file…', cls: 'igggy-rv-btn-secondary' })
       .addEventListener('click', () => openAudioFilePicker(this.plugin))
   }
@@ -175,17 +213,19 @@ export class RecordingView extends ItemView {
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
 
-    // Mute toggle — updates in-place without re-rendering
-    const muteBtn = controls.createEl('button', { text: '🎙️ Mute', cls: 'igggy-rv-btn-secondary' })
-    muteBtn.addEventListener('click', () => {
-      if (this.session?.isMuted()) {
-        this.session.unmute()
-        muteBtn.textContent = '🎙️ Mute'
-      } else {
-        this.session?.mute()
-        muteBtn.textContent = '🔇 Unmute'
-      }
-    })
+    // Mute toggle — only shown when a mic stream is active ('mic' or 'both' modes)
+    if (this.session?.hasMic()) {
+      const muteBtn = controls.createEl('button', { text: '🎙️ Mute', cls: 'igggy-rv-btn-secondary' })
+      muteBtn.addEventListener('click', () => {
+        if (this.session?.isMuted()) {
+          this.session.unmute()
+          muteBtn.textContent = '🎙️ Mute'
+        } else {
+          this.session?.mute()
+          muteBtn.textContent = '🔇 Unmute'
+        }
+      })
+    }
 
     controls.createEl('button', { text: '⏸ Pause', cls: 'igggy-rv-btn-secondary' })
       .addEventListener('click', () => this.handlePause())
@@ -354,13 +394,20 @@ export class RecordingView extends ItemView {
 
     this.transition('requesting')
 
-    // Request microphone access — may throw NotAllowedError or NotFoundError
+    // Acquire audio source(s) based on selected mode
     let session: RecordingSession
     try {
-      session = await RecordingSession.create()
+      session = await RecordingSession.create(this.recordingMode)
     } catch (err) {
+      // User dismissed the screen picker — return to idle silently (not an error)
+      if (err instanceof PickerCancelledError) {
+        this.transition('idle')
+        return
+      }
       const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('NotAllowed') || msg.includes('Permission denied')) {
+      if (msg.includes('No audio was shared')) {
+        this.errorMsg = msg
+      } else if (msg.includes('NotAllowed') || msg.includes('Permission denied')) {
         this.errorMsg = 'Microphone access denied — allow access and try again.'
       } else if (msg.includes('NotFound') || msg.includes('not found')) {
         this.errorMsg = 'No microphone found — connect one and try again.'

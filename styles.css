@@ -212,3 +212,56 @@
   text-align: center;
   margin: 0;
 }
+
+/* ── Audio source selector (idle state) ────────────────────────────────────── */
+
+.igggy-rv-source-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.igggy-rv-source-label {
+  font-size: 0.75em;
+  color: var(--text-faint);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.igggy-rv-source-row {
+  display: flex;
+  gap: 6px;
+}
+
+.igggy-rv-source-btn {
+  flex: 1;
+  padding: 6px 4px;
+  border-radius: 6px;
+  font-size: 0.8em;
+  font-weight: 500;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-modifier-form-field);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-align: center;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.igggy-rv-source-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.igggy-rv-source-btn.is-selected {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: transparent;
+}
+
+.igggy-rv-source-hint {
+  font-size: 0.75em;
+  color: var(--text-faint);
+  margin: 0;
+  line-height: 1.45;
+}

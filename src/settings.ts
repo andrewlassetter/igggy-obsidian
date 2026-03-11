@@ -27,6 +27,7 @@ export interface IgggySettings {
 
   outputFolder: string    // vault folder, e.g. "Igggy"
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
+  showTasks: boolean      // include ## Tasks section in generated notes
 }
 
 export const DEFAULT_SETTINGS: IgggySettings = {
@@ -42,4 +43,5 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   includeSystemAudio: false,
   outputFolder: 'Igggy',
   embedAudio: true,
+  showTasks: true,
 }

@@ -200,6 +200,7 @@ async function runHostedPipeline(
     await finalizePlaceholderFromHosted(app, placeholderFile, note, {
       audioPath,
       embedAudio,
+      showTasks: plugin.settings.showTasks,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -215,7 +216,7 @@ async function finalizePlaceholderFromHosted(
   app: IgggyPlugin['app'],
   placeholderFile: TFile,
   note: HostedNoteResult,
-  opts: { audioPath?: string; embedAudio?: boolean }
+  opts: { audioPath?: string; embedAudio?: boolean; showTasks?: boolean }
 ): Promise<void> {
   // Parse JSON fields stored as strings in the DB
   const keyTopics = note.keyTopics
@@ -244,6 +245,7 @@ async function finalizePlaceholderFromHosted(
     durationSec: note.audioDurationSec ?? undefined,
     audioPath: opts.audioPath,
     embedAudio: opts.embedAudio ?? false,
+    showTasks: opts.showTasks ?? true,
   })
 }
 
@@ -322,6 +324,7 @@ export async function runProcessingPipeline(
       durationSec,
       audioPath,
       embedAudio,
+      showTasks: settings.showTasks,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)

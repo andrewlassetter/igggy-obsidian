@@ -1,6 +1,10 @@
 /**
- * Shared prompt builder — ported from web app src/lib/claude.ts.
+ * Shared prompt builder — ported from web app packages/core/src/prompt.ts.
  * Used by both ClaudeProvider and OpenAIGPT4oProvider.
+ *
+ * SYNC NOTE: When updating, keep AI-facing field names as-is (keyTopics, actionItems).
+ * The web app core prompt uses "keyHighlights" which is mapped to "keyTopics" by
+ * validateNoteContent(). The plugin uses "keyTopics" directly.
  */
 
 export interface TranscriptMeta {
@@ -79,23 +83,44 @@ Return a JSON object with ALL of these fields:
   ]
 }
 
+VOICE AND STYLE:
+- Write with a direct, warm editorial voice. Lead with the most important insight, not setup.
+- Be a sharp editor: cut anything that doesn't add meaning. Never pad or hedge.
+- Write as if briefing a smart colleague who wasn't in the room.
+
+NEVER:
+- Start any bullet with "The speaker said…", "It was mentioned that…", or "Someone noted…"
+- Use filler phrases: "It's worth noting", "Additionally", "In conclusion", "As mentioned"
+- Pad the summary — if it's covered well in 2 sentences, don't write 3
+
 Rules — read carefully:
 - summary: 2–3 sentences only. High-level, scannable. Never a list.
-- keyTopics: 3–6 topics covering the main threads. 2–4 concise bullets per topic. For memos, these are the main themes or ideas discussed.
+- keyTopics: 3–6 topics covering the main threads. 2–4 concise bullets per topic. Topic names must be specific and earned from the content — no generic labels like "Discussion" or "Updates".
 - content: 2–4 prose paragraphs. For meetings, a narrative recap. For memos, the key ideas expanded. Always populate even if it covers similar ground to keyTopics.
 - decisions: things explicitly decided, AND things completed or resolved during the recording (e.g. "deleted the project", "agreed to skip the release"). Stated as facts.
-- keyTerms: ONLY for LECTURE type. Flat list of technical terms, concepts, or frameworks introduced. Strings only. Return [] or omit for all other types.
+- keyTerms: ONLY used for LECTURE type. A flat list of technical terms, concepts, or named frameworks introduced in this lecture (strings only — no definitions). If none, return []. For all other note types, return [] or omit.
 - actionItems: ONLY work that remains to be done AFTER this recording ends. If something was completed, decided, or resolved during the recording itself — it belongs in decisions, NOT actionItems.
 - NO DUPLICATE items between decisions and actionItems. If an item could fit both, put it in decisions.
 - If no actionItems exist, use []. If no decisions were made, use [].
 
+For MEETING and ONE_ON_ONE recordings:
+- If the transcript contains [Speaker N]: labels (Deepgram detected multiple speakers), you may — and should — attribute statements, decisions, and action items to specific speakers. Write naturally: "Speaker 1 raised a concern about…", "Speaker 2 agreed to…", "Speaker 1 and Speaker 2 aligned on…"
+- If the transcript has NO speaker labels (single speaker or unlabeled recording), write in an abstract voice: "The team agreed…" / "A concern was raised…" / "It was decided…"
+- Never fabricate, infer, or guess speaker identity beyond what the transcript explicitly labels. Do not replace speaker labels with assumed names, roles, or pronouns.
+
+For MEMO and JOURNAL recordings:
+- summary: 1–3 sentences capturing the core idea — not a table of contents
+- Use content[] for tight prose (exploratory thinking) OR keyTopics (action-oriented ideas) — not both
+- Surface implicit tasks clearly in actionItems — memos often contain tasks that aren't stated explicitly
+
 For LECTURE recordings:
-- summary: 2–4 sentences capturing the lecture's central thesis or learning objective.
-- keyTopics: the main concepts or arguments covered IN ORDER they were presented. Each bullet should be a complete, informative sentence. Aim for 5–8 highlights across 2–5 topic groups.
-- keyTerms: flat list of technical terms or key vocabulary introduced. Return [] if none.
+- The recorder is a passive listener. Do NOT attribute content to the listener — only what the lecturer said matters.
+- summary: 2–4 sentences capturing the lecture's central thesis or learning objective in plain language.
+- keyTopics: the main concepts, arguments, or topics the lecturer covered, IN THE ORDER they were presented. Each highlight should be a complete, informative sentence as a bullet — not a fragment or a generic title. Aim for 5–8 highlights across 2–5 topic groups.
+- keyTerms: flat list of technical terms, named frameworks, or key vocabulary introduced. Strings only — no definitions. Include even well-known terms if they were explicitly defined or central to the lecture. Return [] if none.
 - decisions: return [] — lectures have no decisions.
-- actionItems: follow-up tasks for the listener only (assigned reading, practice, topics to research). Return [] if none mentioned.
-- Do NOT attribute statements to speakers by name.
+- actionItems: follow-up tasks for the LISTENER only (assigned reading, practice problems, topics to research). If none were mentioned, return [].
+- Do NOT attribute statements to speakers by name. Write from the content's perspective.
 
 Respond with only the JSON object — no preamble, no explanation, no markdown code fences`
 }

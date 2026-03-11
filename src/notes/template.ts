@@ -8,10 +8,11 @@ export interface NoteTemplateData {
   durationSec?: number
   audioPath?: string     // vault-relative path to audio file
   embedAudio: boolean
+  showTasks: boolean     // feature flag — when false, Tasks section is omitted from output
 }
 
 export function generateMarkdown(data: NoteTemplateData): string {
-  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio } = data
+  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks } = data
   const { noteType, title, summary, content, keyTopics, decisions, actionItems } = noteContent
 
   // --- Frontmatter ---
@@ -38,10 +39,11 @@ export function generateMarkdown(data: NoteTemplateData): string {
   // --- Content (prose narrative paragraphs) ---
   const contentSection = content.length > 0 ? content.join('\n\n') : null
 
-  // --- Key Highlights ---
+  // --- Key Highlights / Main Points ---
+  const keyHighlightsHeader = noteType === 'LECTURE' ? '## Main Points' : '## Key Highlights'
   const keyHighlightsSection =
     keyTopics.length > 0
-      ? `## Key Highlights\n\n${keyTopics
+      ? `${keyHighlightsHeader}\n\n${keyTopics
           .map((t) => `### ${t.topic}\n${t.bullets.map((b) => `- ${b}`).join('\n')}`)
           .join('\n\n')}`
       : null
@@ -55,9 +57,9 @@ export function generateMarkdown(data: NoteTemplateData): string {
         : `## Decisions\n\n${decisions.map((d) => `- ${d}`).join('\n')}`
       : null
 
-  // --- Tasks ---
+  // --- Tasks (hidden when showTasks is false) ---
   const actionItemsSection =
-    actionItems.length > 0
+    showTasks && actionItems.length > 0
       ? `## Tasks\n\n${actionItems
           .map((a) => {
             let line = `- [ ] ${a.content}`

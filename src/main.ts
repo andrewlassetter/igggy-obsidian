@@ -4,7 +4,6 @@ import { IgggySettingsTab } from './settings-tab'
 import {
   registerCommands,
   registerMenus,
-  openAudioFilePicker,
   validateKeys,
   runProcessingPipeline,
 } from './commands'
@@ -106,7 +105,7 @@ export default class IgggyPlugin extends Plugin {
       leaf = workspace.getRightLeaf(false) ?? workspace.getLeaf(false)
       await leaf.setViewState({ type: RECORDING_VIEW_TYPE, active: true })
     }
-    workspace.revealLeaf(leaf)
+    void workspace.revealLeaf(leaf)
   }
 
   async loadSettings(): Promise<void> {

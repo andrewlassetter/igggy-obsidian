@@ -84,8 +84,9 @@ export class RecordingView extends ItemView {
   getDisplayText(): string { return 'Igggy Recording' }
   getIcon(): string { return 'mic' }
 
-  async onOpen(): Promise<void> {
+  onOpen(): Promise<void> {
     this.render()
+    return Promise.resolve()
   }
 
   async onClose(): Promise<void> {
@@ -153,7 +154,7 @@ export class RecordingView extends ItemView {
     const keyError = validateKeys(this.plugin)
     if (keyError) {
       body.createEl('p', {
-        text: 'API keys required — open Settings to add them.',
+        text: 'API keys required — Open settings to add them.',
         cls: 'igggy-rv-warning',
       })
     }
@@ -176,19 +177,19 @@ export class RecordingView extends ItemView {
     checkbox.id = 'igggy-system-audio'
 
     const hintEl = body.createEl('p', {
-      text: 'You\'ll be prompted to choose a window — check "Share audio".',
+      text: 'You\'ll be prompted to choose a window — Check "Share audio".',
       cls: 'igggy-rv-source-hint',
     })
-    hintEl.style.display = checkbox.checked ? '' : 'none'
+    hintEl.toggleClass('igggy-hidden', !checkbox.checked)
 
     checkbox.addEventListener('change', () => {
       this.plugin.settings.includeSystemAudio = checkbox.checked
       void this.plugin.saveSettings()
-      hintEl.style.display = checkbox.checked ? '' : 'none'
+      hintEl.toggleClass('igggy-hidden', !checkbox.checked)
     })
 
     body.createEl('button', { text: '↑ from file…', cls: 'igggy-rv-btn-secondary' })
-      .addEventListener('click', () => openAudioFilePicker(this.plugin))
+      .addEventListener('click', () => { void openAudioFilePicker(this.plugin) })
   }
 
   // ── Recording ──────────────────────────────────────────────────────────────
@@ -205,7 +206,7 @@ export class RecordingView extends ItemView {
       text: silenceMsg,
       cls: 'igggy-rv-warning',
     })
-    this.silenceWarningEl.style.display = 'none'
+    this.silenceWarningEl.toggleClass('igggy-hidden', true)
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer', text: '0:00' })
@@ -366,13 +367,18 @@ export class RecordingView extends ItemView {
         ctx.fill()
       }
 
-      // Silence detection — only active after the initial delay
+      // Silence detection — only active after the initial delay AND when mic is not muted
       if (this.silenceWarningEl && Date.now() - recordingStartMs > SILENCE_DELAY_MS) {
-        let maxVal = 0
-        for (let i = 0; i < freqData.length; i++) {
-          if (freqData[i] > maxVal) maxVal = freqData[i]
+        if (this.session?.isMuted()) {
+          // User intentionally muted mic — don't warn about silence
+          this.silenceWarningEl.toggleClass('igggy-hidden', true)
+        } else {
+          let maxVal = 0
+          for (let i = 0; i < freqData.length; i++) {
+            if (freqData[i] > maxVal) maxVal = freqData[i]
+          }
+          this.silenceWarningEl.toggleClass('igggy-hidden', maxVal >= SILENCE_THRESHOLD)
         }
-        this.silenceWarningEl.style.display = maxVal < SILENCE_THRESHOLD ? '' : 'none'
       }
     }
 
@@ -423,7 +429,9 @@ export class RecordingView extends ItemView {
       if (msg.includes('No audio was shared')) {
         this.errorMsg = msg
       } else if (msg.includes('NotAllowed') || msg.includes('Permission denied')) {
-        this.errorMsg = 'Microphone access denied — allow access and try again.'
+        this.errorMsg = this.recordingMode === 'both'
+          ? 'Screen recording access denied — allow access in System Settings then restart Obsidian.'
+          : 'Microphone access denied — allow access and try again.'
       } else if (msg.includes('NotFound') || msg.includes('not found')) {
         this.errorMsg = 'No microphone found — connect one and try again.'
       } else {
@@ -542,7 +550,7 @@ export class RecordingView extends ItemView {
     this.plugin.recordingPlaceholder = null
     if (file) {
       try {
-        await this.plugin.app.vault.trash(file, true)
+        await this.plugin.app.fileManager.trashFile(file)
       } catch {
         // File may have already been removed — ignore
       }
@@ -556,7 +564,7 @@ export class RecordingView extends ItemView {
     this.state = next
     const root = this.containerEl.children[1] as HTMLElement
     // Update only the body to avoid losing the header on rapid transitions
-    const body = root.querySelector('.igggy-rv-body') as HTMLElement | null
+    const body = root.querySelector<HTMLElement>('.igggy-rv-body')
     if (body) {
       this.renderBody(body)
     } else {

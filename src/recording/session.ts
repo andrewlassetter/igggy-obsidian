@@ -82,9 +82,18 @@ export class RecordingSession {
           video: true,
           audio: true,
         })
-      } catch {
-        // User dismissed the screen picker — signal the view to return to idle
-        throw new PickerCancelledError()
+      } catch (err) {
+        // Only treat user-initiated cancellation as PickerCancelledError.
+        // Real errors (permission denied, API unavailable) propagate to the view.
+        if (
+          err instanceof DOMException &&
+          (err.name === 'AbortError' ||
+           (err.name === 'NotAllowedError' &&
+            err.message.toLowerCase().includes('cancel')))
+        ) {
+          throw new PickerCancelledError()
+        }
+        throw err
       }
 
       // Stop video tracks — only the audio is needed

@@ -20,7 +20,7 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Mode')
-      .setDesc('BYOK: use your own API keys. Hosted: use Igggy\'s keys (requires account).')
+      .setDesc('BYOK: Use your own API keys. Hosted: Use Igggy\'s keys (requires account).')
       .addDropdown((dd) =>
         dd
           .addOption('byok', 'BYOK — bring your own keys')
@@ -61,6 +61,16 @@ export class IgggySettingsTab extends PluginSettingTab {
       .addToggle((toggle) =>
         toggle.setValue(this.plugin.settings.embedAudio).onChange(async (value) => {
           this.plugin.settings.embedAudio = value
+          await this.plugin.saveSettings()
+        })
+      )
+
+    new Setting(containerEl)
+      .setName('Show tasks section in notes')
+      .setDesc('Include the Tasks section in generated notes. Tasks are still extracted by the AI when disabled — they just won\'t appear in the note.')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.showTasks).onChange(async (value) => {
+          this.plugin.settings.showTasks = value
           await this.plugin.saveSettings()
         })
       )

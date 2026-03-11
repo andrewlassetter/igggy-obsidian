@@ -1,5 +1,9 @@
 /* Igggy Plugin Styles */
 
+/* ── Utility ────────────────────────────────────────────────────────────────── */
+
+.igggy-hidden { display: none; }
+
 /* ── Waveform block (igggy-status code block processor) ──────────────────────────
    Three states: recording (canvas), paused (flat CSS bars), processing (sine wave)
    ──────────────────────────────────────────────────────────────────────────────── */

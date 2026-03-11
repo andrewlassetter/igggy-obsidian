@@ -9,6 +9,7 @@ export interface WriteNoteOptions {
   durationSec?: number
   audioPath?: string
   embedAudio: boolean
+  showTasks: boolean
 }
 
 export interface FinalizeOptions {
@@ -17,6 +18,7 @@ export interface FinalizeOptions {
   durationSec?: number
   audioPath?: string
   embedAudio: boolean
+  showTasks: boolean
 }
 
 export async function writeNote(
@@ -24,7 +26,7 @@ export async function writeNote(
   noteContent: NoteContent,
   options: WriteNoteOptions
 ): Promise<TFile> {
-  const { outputFolder, date, transcript, durationSec, audioPath, embedAudio } = options
+  const { outputFolder, date, transcript, durationSec, audioPath, embedAudio, showTasks } = options
 
   // Sanitize title for use as filename
   const safeTitle = noteContent.title
@@ -51,6 +53,7 @@ export async function writeNote(
     durationSec,
     audioPath,
     embedAudio,
+    showTasks,
   }
   const markdown = generateMarkdown(templateData)
 
@@ -275,7 +278,7 @@ export async function finalizePlaceholder(
   noteContent: NoteContent,
   options: FinalizeOptions
 ): Promise<void> {
-  const { date, transcript, durationSec, audioPath, embedAudio } = options
+  const { date, transcript, durationSec, audioPath, embedAudio, showTasks } = options
 
   // Reuse the igggy_id generated during createPlaceholder
   const currentContent = await app.vault.read(file)
@@ -290,6 +293,7 @@ export async function finalizePlaceholder(
     durationSec,
     audioPath,
     embedAudio,
+    showTasks,
   }
   const finalMarkdown = generateMarkdown(templateData)
 

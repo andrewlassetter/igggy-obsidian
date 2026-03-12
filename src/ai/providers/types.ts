@@ -79,6 +79,7 @@ export interface SummarizeOptions {
   analysis?: TranscriptAnalysis
   includeTasks?: boolean       // default true
   customPrompt?: string
+  preferences?: NotePreferences // density + tone for regeneration
 }
 
 export interface SummarizationProvider {

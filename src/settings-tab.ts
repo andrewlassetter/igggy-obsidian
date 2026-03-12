@@ -20,11 +20,11 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Mode')
-      .setDesc('BYOK: Use your own API keys. Hosted: Use Igggy\'s keys (requires account).')
+      .setDesc('BYOK: Use your own API keys. Igggy Pro: Managed keys (requires account).')
       .addDropdown((dd) =>
         dd
           .addOption('byok', 'BYOK — bring your own keys')
-          .addOption('hosted', 'Hosted — use Igggy\'s keys')
+          .addOption('hosted', 'Igggy Pro')
           .setValue(this.plugin.settings.mode)
           .onChange(async (value) => {
             this.plugin.settings.mode = value as 'byok' | 'hosted'

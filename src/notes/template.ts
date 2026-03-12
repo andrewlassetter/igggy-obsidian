@@ -10,10 +10,11 @@ export interface NoteTemplateData {
   audioPath?: string     // vault-relative path to audio file
   embedAudio: boolean
   showTasks: boolean     // feature flag — when false, Tasks section is omitted from output
+  analysisJson?: string  // JSON-stringified TranscriptAnalysis from Pass 1 — stored for regen
 }
 
 export function generateMarkdown(data: NoteTemplateData): string {
-  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks } = data
+  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = data
   const { title, summary, content, keyTopics, decisions, actionItems } = noteContent
   // Normalize legacy types (ONE_ON_ONE → MEETING, JOURNAL → MEMO) for frontmatter + tags
   const noteType = normalizeNoteType(noteContent.noteType)
@@ -27,6 +28,7 @@ export function generateMarkdown(data: NoteTemplateData): string {
     `type: ${noteType}`,
     durationSec != null ? `duration_sec: ${durationSec}` : null,
     audioPath ? `audio: "${audioPath}"` : null,
+    analysisJson ? `igggy_analysis: '${analysisJson.replace(/'/g, "''")}'` : null,
     'source: igggy',
     `tags: [igggy, ${noteType.toLowerCase()}]`,
     '---',

@@ -1,4 +1,4 @@
-import { Menu, Notice, SuggestModal, TFile, requestUrl } from 'obsidian'
+import { Menu, Notice, SuggestModal, TFile, normalizePath, requestUrl } from 'obsidian'
 import type IgggyPlugin from './main'
 import { preprocessAudio } from './audio/preprocessor'
 import { OpenAIWhisperProvider } from './audio/providers/openai'
@@ -6,12 +6,15 @@ import { DeepgramProvider } from './audio/providers/deepgram'
 import { ClaudeProvider } from './ai/providers/claude'
 import { OpenAIGPT4oProvider } from './ai/providers/openai'
 import { normalizeNoteType } from './ai/providers/types'
+import type { SummarizationProvider, TranscriptAnalysis } from './ai/providers/types'
 import {
   createPlaceholder,
   updatePlaceholderStage,
   setPlaceholderError,
   finalizePlaceholder,
 } from './notes/writer'
+import { generateMarkdown, type NoteTemplateData } from './notes/template'
+import { RegenerateModal, type RegenOptions } from './ui/regenerate-modal'
 
 const AUDIO_EXTENSIONS = new Set(['m4a', 'mp3', 'wav', 'webm', 'ogg', 'flac', 'aac', 'mp4'])
 const APP_URL = 'https://app.igggy.ai'
@@ -29,7 +32,7 @@ export function validateKeys(plugin: IgggyPlugin): string | null {
   // Hosted mode — no BYOK keys needed
   if (settings.mode === 'hosted') {
     if (!settings.hostedAccessToken || !settings.hostedRefreshToken) {
-      return 'Igggy: Sign in to the hosted plan. Open plugin settings → Hosted mode.'
+      return 'Igggy: Sign in to Igggy Pro. Open plugin settings \u2192 Igggy Pro mode.'
     }
     return null
   }
@@ -47,6 +50,37 @@ export function validateKeys(plugin: IgggyPlugin): string | null {
     return 'Igggy: OpenAI API key required. Open plugin settings to add it.'
   }
   return null
+}
+
+/**
+ * Narrower validation for regeneration — only checks summarization provider key.
+ * Regen doesn't need transcription keys since it reuses the stored transcript.
+ */
+export function validateSummarizationKeys(plugin: IgggyPlugin): string | null {
+  const { settings } = plugin
+
+  if (settings.mode === 'hosted') {
+    if (!settings.hostedAccessToken || !settings.hostedRefreshToken) {
+      return 'Igggy: Sign in to Igggy Pro. Open plugin settings \u2192 Igggy Pro mode.'
+    }
+    return null
+  }
+
+  if (settings.summarizationProvider === 'anthropic' && !settings.anthropicKey) {
+    return 'Igggy: Anthropic API key required. Open plugin settings to add it.'
+  }
+  if (settings.summarizationProvider === 'openai' && !settings.openaiKey) {
+    return 'Igggy: OpenAI API key required. Open plugin settings to add it.'
+  }
+  return null
+}
+
+/** Returns a SummarizationProvider based on the current settings. */
+function getSummarizationProvider(plugin: IgggyPlugin): SummarizationProvider {
+  const { settings } = plugin
+  return settings.summarizationProvider === 'anthropic'
+    ? new ClaudeProvider(settings.anthropicKey)
+    : new OpenAIGPT4oProvider(settings.openaiKey)
 }
 
 // ── Hosted: token refresh ─────────────────────────────────────────────────────
@@ -310,12 +344,10 @@ export async function runProcessingPipeline(
       '\uD83C\uDF99\uFE0F Transcript ready \u2713',
       '\uD83D\uDD0D Analyzing transcript\u2026',
     ])
-    const summarizationProvider =
-      settings.summarizationProvider === 'anthropic'
-        ? new ClaudeProvider(settings.anthropicKey)
-        : new OpenAIGPT4oProvider(settings.openaiKey)
+    const summarizationProvider = getSummarizationProvider(plugin)
 
     const analysis = await summarizationProvider.analyze(transcript, { durationSec, capturedAt })
+    const analysisJson = JSON.stringify(analysis)
 
     // ── Summarize (Pass 2) ───────────────────────────────────────────────────
     step = 'generating note'
@@ -338,6 +370,7 @@ export async function runProcessingPipeline(
       audioPath,
       embedAudio,
       showTasks: settings.showTasks,
+      analysisJson,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
@@ -435,6 +468,157 @@ class AudioFileSuggestModal extends SuggestModal<TFile> {
   }
 }
 
+// ── Regeneration Pipeline ─────────────────────────────────────────────────────
+
+/**
+ * Parses an Igggy note file and regenerates it using the AI pipeline.
+ * When stored analysis is available, only Pass 2 runs (fast path).
+ */
+async function regenerateNote(
+  plugin: IgggyPlugin,
+  file: TFile,
+  options: RegenOptions
+): Promise<void> {
+  const { app } = plugin
+
+  // ── 1. Parse existing note ──────────────────────────────────────────────────
+  const content = await app.vault.read(file)
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/)
+  if (!frontmatterMatch) {
+    new Notice('Igggy: Could not read note frontmatter.', 5000)
+    return
+  }
+  const fm = frontmatterMatch[1]
+
+  // Extract frontmatter fields
+  const igggyId = fm.match(/^igggy_id:\s*(.+)$/m)?.[1]?.trim() ?? crypto.randomUUID()
+  const date = fm.match(/^date:\s*(.+)$/m)?.[1]?.trim() ?? new Date().toISOString().slice(0, 10)
+  const durationStr = fm.match(/^duration_sec:\s*(\d+)$/m)?.[1]
+  const durationSec = durationStr ? parseInt(durationStr, 10) : undefined
+  const audioPath = fm.match(/^audio:\s*"?(.+?)"?\s*$/m)?.[1]?.trim()
+
+  // Parse stored analysis (single-quoted YAML scalar — unescape '' → ')
+  let analysis: TranscriptAnalysis | undefined
+  const analysisMatch = fm.match(/^igggy_analysis:\s*'([\s\S]*?)'\s*$/m)
+  if (analysisMatch) {
+    try {
+      const raw = analysisMatch[1].replace(/''/g, "'")
+      analysis = JSON.parse(raw) as TranscriptAnalysis
+    } catch {
+      console.warn('[Igggy] Could not parse stored analysis — will run full pipeline')
+    }
+  }
+
+  // ── 2. Extract transcript ───────────────────────────────────────────────────
+  const transcriptMatch = content.match(
+    /## Transcript\n\n<details>\n<summary>Full transcript<\/summary>\n\n([\s\S]*?)\n\n<\/details>/
+  )
+  if (!transcriptMatch) {
+    new Notice('Igggy: This note has no transcript \u2014 cannot regenerate.', 5000)
+    return
+  }
+  const transcript = transcriptMatch[1]
+
+  // ── 3. Run AI ───────────────────────────────────────────────────────────────
+  new Notice('Regenerating note\u2026', 3000)
+
+  try {
+    const provider = getSummarizationProvider(plugin)
+
+    let analysisJson: string | undefined
+    if (!analysis) {
+      // Full path: Pass 1 + Pass 2
+      analysis = await provider.analyze(transcript, { durationSec })
+    }
+    analysisJson = JSON.stringify(analysis)
+
+    const noteContent = await provider.summarize(transcript, { durationSec }, {
+      analysis,
+      includeTasks: options.includeTasks,
+      customPrompt: options.customPrompt || undefined,
+      preferences: { density: options.density, tone: 'professional' },
+    })
+
+    // ── 4. Write result ─────────────────────────────────────────────────────
+    const templateData: NoteTemplateData = {
+      noteContent,
+      date,
+      igggyId: options.action === 'replace' ? igggyId : crypto.randomUUID(),
+      transcript,
+      durationSec,
+      audioPath,
+      embedAudio: !!audioPath && plugin.settings.embedAudio,
+      showTasks: options.includeTasks,
+      analysisJson,
+    }
+    const markdown = generateMarkdown(templateData)
+
+    if (options.action === 'replace') {
+      await app.vault.modify(file, markdown)
+
+      // Rename if title changed
+      const safeTitle = noteContent.title
+        .replace(/[/\\:*?"<>|#^[\]]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100)
+
+      const folderPath = file.parent?.path ?? ''
+      const targetFilename = `${date} - ${safeTitle}.md`
+      const targetPath = normalizePath(
+        folderPath ? `${folderPath}/${targetFilename}` : targetFilename
+      )
+
+      if (file.path !== targetPath && !app.vault.getAbstractFileByPath(targetPath)) {
+        await app.vault.rename(file, targetPath)
+      }
+
+      new Notice('Note regenerated.', 3000)
+    } else {
+      // Save as new note
+      const safeTitle = noteContent.title
+        .replace(/[/\\:*?"<>|#^[\]]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 100)
+
+      const folderPath = normalizePath(plugin.settings.outputFolder)
+      const folder = app.vault.getAbstractFileByPath(folderPath)
+      if (!folder) {
+        await app.vault.createFolder(folderPath)
+      }
+
+      let filePath = normalizePath(`${folderPath}/${date} - ${safeTitle}.md`)
+      let counter = 2
+      while (app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
+        filePath = normalizePath(`${folderPath}/${date} - ${safeTitle} ${counter}.md`)
+        counter++
+      }
+
+      const newFile = await app.vault.create(filePath, markdown)
+      await app.workspace.getLeaf(false).openFile(newFile)
+
+      new Notice('New note created.', 3000)
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error('[Igggy] Regeneration error:', err)
+    new Notice(`Igggy: Regeneration failed \u2014 ${friendlyError(message, 'generating note')}`, 6000)
+  }
+}
+
+function openRegenerateModal(plugin: IgggyPlugin, file: TFile): void {
+  const keyError = validateSummarizationKeys(plugin)
+  if (keyError) {
+    new Notice(keyError, 6000)
+    return
+  }
+
+  new RegenerateModal(plugin.app, plugin, file, (options) => {
+    void regenerateNote(plugin, file, options)
+  }).open()
+}
+
 // ── Ribbon / Menu Entry Points ────────────────────────────────────────────────
 
 export function openAudioFilePicker(plugin: IgggyPlugin): void {
@@ -470,6 +654,21 @@ export function registerMenus(plugin: IgggyPlugin): void {
       )
     })
   )
+
+  // File explorer context menu — "Regenerate with Igggy" on Igggy note files
+  plugin.registerEvent(
+    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+      if (!(file instanceof TFile) || file.extension !== 'md') return
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return
+      menu.addItem((item) =>
+        item
+          .setTitle('Regenerate with Igggy')
+          .setIcon('refresh-cw')
+          .onClick(() => { openRegenerateModal(plugin, file) })
+      )
+    })
+  )
 }
 
 // ── Command Registration ──────────────────────────────────────────────────────
@@ -494,6 +693,20 @@ export function registerCommands(plugin: IgggyPlugin): void {
     name: 'Process audio file\u2026',
     callback: () => {
       new AudioFileSuggestModal(plugin).open()
+    },
+  })
+
+  // Regenerate an existing Igggy note
+  plugin.addCommand({
+    id: 'regenerate-note',
+    name: 'Regenerate note',
+    checkCallback: (checking: boolean) => {
+      const file = plugin.app.workspace.getActiveFile()
+      if (!file || file.extension !== 'md') return false
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return false
+      if (!checking) openRegenerateModal(plugin, file)
+      return true
     },
   })
 }

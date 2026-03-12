@@ -63,7 +63,7 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
    * When options.analysis is provided, uses adaptive prompt composition.
    */
   async summarize(transcript: string, meta?: TranscriptMeta, options?: SummarizeOptions): Promise<NoteContent> {
-    const prompt = buildPrompt(meta, undefined, {
+    const prompt = buildPrompt(meta, options?.preferences, {
       analysis: options?.analysis,
       includeTasks: options?.includeTasks,
       customPrompt: options?.customPrompt,

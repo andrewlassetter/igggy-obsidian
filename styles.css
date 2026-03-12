@@ -243,3 +243,68 @@
   margin: 0;
   line-height: 1.45;
 }
+
+/* ── Regenerate Modal ─────────────────────────────────────────────────────── */
+
+.igggy-regen-modal h2 {
+  margin: 0 0 12px;
+}
+
+/* Segmented density control */
+.igggy-regen-segmented {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.igggy-regen-segmented button {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--background-modifier-form-field);
+  color: var(--text-muted);
+  border: none;
+  border-right: 1px solid var(--background-modifier-border);
+  transition: background 0.15s, color 0.15s;
+}
+
+.igggy-regen-segmented button:last-child {
+  border-right: none;
+}
+
+.igggy-regen-segmented button:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.igggy-regen-segmented button.igggy-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* Custom instructions textarea */
+.igggy-regen-textarea {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+}
+
+/* Action buttons row */
+.igggy-regen-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.igggy-regen-actions button {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: pointer;
+}

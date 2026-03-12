@@ -1,25 +1,74 @@
 /**
- * GPT-4o Mini summarization provider.
+ * GPT-4o Mini summarization provider — two-pass adaptive pipeline.
  *
- * Uses the same prompt as ClaudeProvider (from src/ai/prompt.ts).
+ * Uses the same prompts as ClaudeProvider (from src/ai/prompt.ts).
  * Key adaptations for GPT-4o:
  *   - Prompt goes in { role: 'system' } instead of a top-level system param
  *   - response_format: { type: 'json_object' } enables JSON mode
- *   - Model: gpt-4o-mini (cheaper, fast)
+ *   - Model: gpt-4o-mini for both analysis and summarization (cheaper, fast)
  */
 
 import { requestUrl } from 'obsidian'
-import { buildPrompt } from '../prompt'
-import type { TranscriptMeta } from '../prompt'
-import type { SummarizationProvider, NoteContent } from './types'
+import { buildAnalysisPrompt, buildPrompt } from '../prompt'
+import type { TranscriptMeta } from './types'
+import type {
+  SummarizationProvider,
+  SummarizeOptions,
+  NoteContent,
+  TranscriptAnalysis,
+} from './types'
+import { normalizeNoteType } from './types'
 
 export class OpenAIGPT4oProvider implements SummarizationProvider {
   constructor(private apiKey: string) {}
 
-  async summarize(transcript: string, meta?: TranscriptMeta): Promise<NoteContent> {
-    const prompt = buildPrompt(meta)
+  /**
+   * Pass 1: Analyze transcript with GPT-4o Mini (fast, cheap).
+   * Returns structured content signals used to compose the adaptive prompt.
+   */
+  async analyze(transcript: string, meta?: TranscriptMeta): Promise<TranscriptAnalysis> {
+    const prompt = buildAnalysisPrompt(meta)
 
-    // Use Obsidian's requestUrl for consistency — avoids any future CORS issues
+    const response = await requestUrl({
+      url: 'https://api.openai.com/v1/chat/completions',
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        max_tokens: 1000,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: prompt },
+          { role: 'user', content: `Transcript:\n---\n${transcript}\n---` },
+        ],
+      }),
+      throw: false,
+    })
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`OpenAI API error ${response.status}: ${response.text}`)
+    }
+
+    const data = JSON.parse(response.text)
+    const text: string = data.choices?.[0]?.message?.content ?? ''
+
+    return parseAnalysis(text)
+  }
+
+  /**
+   * Pass 2: Summarize transcript with GPT-4o Mini.
+   * When options.analysis is provided, uses adaptive prompt composition.
+   */
+  async summarize(transcript: string, meta?: TranscriptMeta, options?: SummarizeOptions): Promise<NoteContent> {
+    const prompt = buildPrompt(meta, undefined, {
+      analysis: options?.analysis,
+      includeTasks: options?.includeTasks,
+      customPrompt: options?.customPrompt,
+    })
+
     const response = await requestUrl({
       url: 'https://api.openai.com/v1/chat/completions',
       method: 'POST',
@@ -50,8 +99,38 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
   }
 }
 
+// ── JSON parsers ─────────────────────────────────────────────────────────────
+
+function parseAnalysis(text: string): TranscriptAnalysis {
+  const parsed = JSON.parse(text.trim())
+
+  // Normalize recording type (in case AI returns a legacy value)
+  parsed.recordingType = normalizeNoteType(parsed.recordingType ?? 'MEETING')
+
+  // Ensure all content signals exist with boolean defaults
+  const signals = parsed.contentSignals ?? {}
+  parsed.contentSignals = {
+    hasDecisions: Boolean(signals.hasDecisions),
+    hasFollowUps: Boolean(signals.hasFollowUps),
+    hasKeyTerms: Boolean(signals.hasKeyTerms),
+    hasSpeakerDiscussion: Boolean(signals.hasSpeakerDiscussion),
+    hasReflectiveProse: Boolean(signals.hasReflectiveProse),
+    hasIdeaDevelopment: Boolean(signals.hasIdeaDevelopment),
+  }
+
+  parsed.speakerCount = parsed.speakerCount ?? 1
+  parsed.voiceInstructions = parsed.voiceInstructions ?? null
+  parsed.toneRegister = parsed.toneRegister === 'casual' ? 'casual' : 'formal'
+  parsed.primaryFocus = parsed.primaryFocus ?? ''
+
+  return parsed as TranscriptAnalysis
+}
+
 function parseNoteContent(text: string): NoteContent {
   const parsed = JSON.parse(text.trim())
+
+  // Normalize note type
+  parsed.noteType = normalizeNoteType(parsed.noteType ?? 'MEETING')
 
   parsed.keyTopics = parsed.keyTopics ?? []
   parsed.content = parsed.content ?? []

@@ -5,6 +5,7 @@ import { OpenAIWhisperProvider } from './audio/providers/openai'
 import { DeepgramProvider } from './audio/providers/deepgram'
 import { ClaudeProvider } from './ai/providers/claude'
 import { OpenAIGPT4oProvider } from './ai/providers/openai'
+import { normalizeNoteType } from './ai/providers/types'
 import {
   createPlaceholder,
   updatePlaceholderStage,
@@ -227,7 +228,7 @@ async function finalizePlaceholderFromHosted(
 
   const noteContent = {
     title: note.title,
-    noteType: note.noteType as 'MEETING' | 'ONE_ON_ONE' | 'MEMO' | 'JOURNAL',
+    noteType: normalizeNoteType(note.noteType),
     summary: note.aiSummary,
     keyTopics,
     content,
@@ -301,20 +302,32 @@ export async function runProcessingPipeline(
       processed.filename
     )
 
-    // ── Summarize ────────────────────────────────────────────────────────────
-    step = 'generating note'
+    // ── Analyze (Pass 1) ────────────────────────────────────────────────────
+    step = 'analyzing transcript'
     await updatePlaceholderStage(app, placeholderFile, [
       firstStageLine,
       audioLine,
       '\uD83C\uDF99\uFE0F Transcript ready \u2713',
-      '\u2728 Generating note\u2026',
+      '\uD83D\uDD0D Analyzing transcript\u2026',
     ])
     const summarizationProvider =
       settings.summarizationProvider === 'anthropic'
         ? new ClaudeProvider(settings.anthropicKey)
         : new OpenAIGPT4oProvider(settings.openaiKey)
 
-    const noteContent = await summarizationProvider.summarize(transcript, { durationSec, capturedAt })
+    const analysis = await summarizationProvider.analyze(transcript, { durationSec, capturedAt })
+
+    // ── Summarize (Pass 2) ───────────────────────────────────────────────────
+    step = 'generating note'
+    await updatePlaceholderStage(app, placeholderFile, [
+      firstStageLine,
+      audioLine,
+      '\uD83C\uDF99\uFE0F Transcript ready \u2713',
+      '\uD83D\uDD0D Analysis complete \u2713',
+      '\u2728 Generating note\u2026',
+    ])
+
+    const noteContent = await summarizationProvider.summarize(transcript, { durationSec, capturedAt }, { analysis })
 
     // ── Finalize ─────────────────────────────────────────────────────────────
     step = 'writing note'

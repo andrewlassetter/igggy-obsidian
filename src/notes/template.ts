@@ -1,4 +1,5 @@
 import type { NoteContent } from '../ai/providers/types'
+import { normalizeNoteType } from '../ai/providers/types'
 
 export interface NoteTemplateData {
   noteContent: NoteContent
@@ -13,7 +14,9 @@ export interface NoteTemplateData {
 
 export function generateMarkdown(data: NoteTemplateData): string {
   const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks } = data
-  const { noteType, title, summary, content, keyTopics, decisions, actionItems } = noteContent
+  const { title, summary, content, keyTopics, decisions, actionItems } = noteContent
+  // Normalize legacy types (ONE_ON_ONE → MEETING, JOURNAL → MEMO) for frontmatter + tags
+  const noteType = normalizeNoteType(noteContent.noteType)
 
   // --- Frontmatter ---
   const frontmatterLines = [

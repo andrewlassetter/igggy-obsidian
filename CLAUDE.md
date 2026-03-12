@@ -20,7 +20,18 @@ npm run lint      # eslint on src/ (TypeScript)
 
 ## Architecture
 
-Audio files in the user's Obsidian vault are selected via a fuzzy modal or context menu. The audio is pre-processed by `src/audio/preprocessor.ts` (Web Audio API + lamejs: mono 16kHz 32kbps MP3) to reduce size before upload. The compressed audio is sent to a transcription provider (OpenAI Whisper or Deepgram Nova-3) via HTTP. The transcript is passed to a summarization provider (GPT-4o Mini or Claude Sonnet) with a structured prompt from `src/ai/prompt.ts` that returns a typed `NoteContent` JSON object. `src/notes/writer.ts` feeds that into `src/notes/template.ts` to generate markdown with YAML frontmatter, then writes the file to the vault using the Obsidian API. All HTTP calls use `Obsidian.requestUrl` to avoid CORS in Electron, except multipart audio uploads which use native `fetch`.
+Audio files in the user's Obsidian vault are selected via a fuzzy modal or context menu. The audio is pre-processed by `src/audio/preprocessor.ts` (Web Audio API + lamejs: mono 16kHz 32kbps MP3) to reduce size before upload. The compressed audio is sent to a transcription provider (OpenAI Whisper or Deepgram Nova-3) via HTTP.
+
+### AI Summarization (Two-Pass Pipeline)
+
+The transcript goes through a two-pass adaptive pipeline (ported from web app `packages/core/src/prompt.ts`):
+
+1. **Pass 1 — Analysis** (Haiku / GPT-4o Mini): Classifies recording type (`MEETING`, `MEMO`, `LECTURE`), counts speakers, detects 6 content signals (`hasDecisions`, `hasFollowUps`, `hasKeyTerms`, `hasSpeakerDiscussion`, `hasReflectiveProse`, `hasIdeaDevelopment`), detects voice instructions to Igggy, assesses tone, identifies primary focus. Output: `TranscriptAnalysis` JSON.
+2. **Pass 2 — Adaptive Summarization** (Sonnet / GPT-4o Mini): `buildSummarizationPrompt()` composes sections dynamically based on analysis signals — only includes Decisions, Tasks, Key Terms, Speaker Attribution, etc. when signals warrant. Output: `NoteContent` JSON.
+
+The pipeline is orchestrated by `runProcessingPipeline()` in `commands.ts`: preprocess → transcribe → **analyze (Pass 1)** → **summarize (Pass 2)** → finalize.
+
+`src/notes/writer.ts` feeds the result into `src/notes/template.ts` to generate markdown with YAML frontmatter, then writes the file to the vault using the Obsidian API. All HTTP calls use `Obsidian.requestUrl` to avoid CORS in Electron, except multipart audio uploads which use native `fetch`.
 
 ## Key Files
 
@@ -33,10 +44,10 @@ Audio files in the user's Obsidian vault are selected via a fuzzy modal or conte
 | `src/audio/preprocessor.ts` | Web Audio API + lamejs: compress audio to 32kbps MP3 before upload |
 | `src/audio/providers/openai.ts` | OpenAI Whisper transcription (`whisper-1`, `verbose_json`) |
 | `src/audio/providers/deepgram.ts` | Deepgram Nova-3 transcription with speaker diarization |
-| `src/ai/prompt.ts` | `buildPrompt()` — shared prompt with duration/time-of-day context |
-| `src/ai/providers/types.ts` | `NoteContent` type, `SummarizationProvider` interface |
-| `src/ai/providers/claude.ts` | Anthropic Claude Sonnet summarization |
-| `src/ai/providers/openai.ts` | GPT-4o Mini summarization (JSON mode) |
+| `src/ai/prompt.ts` | `buildAnalysisPrompt()` (Pass 1), `buildSummarizationPrompt()` (Pass 2 adaptive), `buildPrompt()` (router) |
+| `src/ai/providers/types.ts` | `NoteType` (3 values), `TranscriptAnalysis`, `NoteContent`, `SummarizationProvider`, `normalizeNoteType()` |
+| `src/ai/providers/claude.ts` | Claude provider: `analyze()` (Haiku) + `summarize()` (Sonnet) |
+| `src/ai/providers/openai.ts` | OpenAI provider: `analyze()` + `summarize()` (GPT-4o Mini for both) |
 | `src/notes/template.ts` | `generateMarkdown()` — builds the full markdown note from `NoteContent` |
 | `src/notes/writer.ts` | Vault file write + collision handling |
 | `src/types/lamejs.d.ts` | TypeScript type stub for lamejs |
@@ -54,7 +65,9 @@ Audio files in the user's Obsidian vault are selected via a fuzzy modal or conte
 ### Terminology
 - **Tasks** — always. Never "action items" in markdown section headers, UI text, or docs
 - **Key Highlights** — the rendered `## Key Highlights` section header (field name in code: `keyTopics`)
-- Note types: `MEETING`, `ONE_ON_ONE`, `MEMO`, `JOURNAL` (screaming snake case in code/frontmatter)
+- Note types in UI: Meeting, Memo, Lecture (title case) — only 3 types
+- Note types in code/frontmatter: `MEETING`, `MEMO`, `LECTURE` (screaming snake case)
+- Legacy types `ONE_ON_ONE` and `JOURNAL` are mapped via `normalizeNoteType()` in `types.ts` — never create new records with these values
 
 ### AI field names vs. display names (do not conflate)
 The prompt (`src/ai/prompt.ts`) asks the AI to return `keyTopics` and `actionItems` — these are the AI-facing JSON keys. They map to display names in `src/notes/template.ts`:
@@ -70,6 +83,6 @@ This plugin ports shared logic from `@igggy/core` (web app `packages/core/`) rat
 
 | File | Description |
 |---|---|
-| `STATUS.md` | What's built, in progress, planned, and backlog |
 | `SERVICES.md` | Third-party services registry with rationale |
+| (no `STATUS.md`)  | Status tracked in web app repo: `igggy/docs/STATUS.md` — single source of truth for both |
 | `2026-03-06 - Obsidian Plugin UI Design Research.md` | Obsidian plugin UI capabilities: extension points, CSS variables, built-in components, design guidelines |

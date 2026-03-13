@@ -108,6 +108,49 @@ export class IgggySettingsTab extends PluginSettingTab {
           await this.plugin.saveSettings()
         })
       )
+
+    // ── Folder & Sync ─────────────────────────────────────────────
+    new Setting(containerEl).setName('Folder & Sync').setHeading()
+
+    new Setting(containerEl)
+      .setName('Cloud backup')
+      .setDesc('Store a backup copy of your notes in Igggy. When enabled, notes are pushed to the cloud after each write — enabling cross-device access and Chat with Igggy. Disable to keep notes on your device only.')
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.cloudBackupEnabled).onChange(async (value) => {
+          this.plugin.settings.cloudBackupEnabled = value
+          this.plugin.settings.folderSyncEnabled = value
+          await this.plugin.saveSettings()
+        })
+      )
+
+    const isHosted = this.plugin.settings.mode === 'hosted' && !!this.plugin.settings.hostedAccessToken
+
+    const lastSyncText = this.plugin.settings.lastSyncedAt
+      ? `Last synced ${new Date(this.plugin.settings.lastSyncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
+      : 'Never synced'
+
+    new Setting(containerEl)
+      .setName('Sync Now')
+      .setDesc(
+        isHosted
+          ? `${lastSyncText} · Scans your vault and pushes all Igggy notes to the cloud DB. Pro only, limit once per hour.`
+          : `${lastSyncText} · On-demand sync is available on Igggy Pro.`
+      )
+      .addButton((btn) => {
+        btn.setButtonText('Sync Now')
+        if (!isHosted) {
+          btn.setDisabled(true)
+          btn.buttonEl.title = 'On-demand sync is available on Igggy Pro'
+          btn.buttonEl.style.opacity = '0.4'
+          btn.buttonEl.style.cursor = 'not-allowed'
+        } else {
+          btn.onClick(() => {
+            // Wired up in Phase 4 — reindexVault() implementation
+            // For now, show a notice that it's coming
+          })
+        }
+        return btn
+      })
   }
 
   private renderHostedSection(containerEl: HTMLElement): void {

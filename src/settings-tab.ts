@@ -1,5 +1,6 @@
 import { App, PluginSettingTab, Setting } from 'obsidian'
 import type IgggyPlugin from './main'
+import { reindexVault } from './sync/reindex'
 
 const APP_URL = 'https://app.igggy.ai'
 
@@ -145,8 +146,7 @@ export class IgggySettingsTab extends PluginSettingTab {
           btn.buttonEl.style.cursor = 'not-allowed'
         } else {
           btn.onClick(() => {
-            // Wired up in Phase 4 — reindexVault() implementation
-            // For now, show a notice that it's coming
+            void reindexVault(this.plugin).then(() => this.display())
           })
         }
         return btn

@@ -18,7 +18,7 @@ import { generateMarkdown, type NoteTemplateData } from './notes/template'
 import { RegenerateModal, type RegenOptions } from './ui/regenerate-modal'
 
 const AUDIO_EXTENSIONS = new Set(['m4a', 'mp3', 'wav', 'webm', 'ogg', 'flac', 'aac', 'mp4'])
-const APP_URL = 'https://app.igggy.ai'
+export const APP_URL = 'https://app.igggy.ai'
 
 // ── Cloud sync helper ─────────────────────────────────────────────────────────
 
@@ -154,7 +154,7 @@ function getSummarizationProvider(plugin: IgggyPlugin): SummarizationProvider {
 const SUPABASE_URL = 'https://fgxhtrwvpzawbnnlphji.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZneGh0cnd2cHphd2JubmxwaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0OTA0NTgsImV4cCI6MjA4ODA2NjQ1OH0.cH2Qp9UQmMeoBBA4EsndybNDBFaZSzsPzY4mJfQqaTI'
 
-async function getHostedToken(plugin: IgggyPlugin): Promise<string> {
+export async function getHostedToken(plugin: IgggyPlugin): Promise<string> {
   const { settings } = plugin
 
   // Refresh if within 60 seconds of expiry

@@ -21,23 +21,25 @@ export class IgggySettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Mode')
       .setDesc('BYOK: Use your own API keys. Igggy Pro: Managed keys (requires account).')
-      .addDropdown((dd) =>
+      .addDropdown((dd) => {
         dd
           .addOption('byok', 'BYOK — bring your own keys')
-          .addOption('hosted', 'Igggy Pro')
-          .setValue(this.plugin.settings.mode)
+          .addOption('hosted', 'Igggy Pro — coming soon')
+          .setValue('byok')
           .onChange(async (value) => {
+            if (value === 'hosted') {
+              // Pro not available yet — revert to BYOK
+              dd.setValue('byok')
+              return
+            }
             this.plugin.settings.mode = value as 'byok' | 'hosted'
             await this.plugin.saveSettings()
-            this.display() // re-render to show/hide sections
+            this.display()
           })
-      )
+      })
 
-    if (this.plugin.settings.mode === 'hosted') {
-      this.renderHostedSection(containerEl)
-    } else {
-      this.renderBYOKSection(containerEl)
-    }
+    // Force BYOK until hosted mode is launched
+    this.renderBYOKSection(containerEl)
 
     // ── Note summarization (always visible) ─────────────────────────
     new Setting(containerEl).setName('Note summarization').setHeading()

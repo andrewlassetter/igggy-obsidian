@@ -292,7 +292,7 @@ async function runHostedPipeline(
 
     // ── Step 5: Convert and write to vault ────────────────────────────────────
     step = 'writing note'
-    await finalizePlaceholderFromHosted(app, placeholderFile, note, {
+    await finalizePlaceholderFromHosted(plugin, placeholderFile, note, {
       audioPath,
       embedAudio,
       showTasks: plugin.settings.showTasks,
@@ -305,14 +305,16 @@ async function runHostedPipeline(
 }
 
 /**
- * Adapts the web app note format into the plugin's finalizePlaceholder call.
+ * Adapts the web app note format into the plugin's finalizePlaceholder call,
+ * then pushes the note to the cloud DB to register the vault igggyId.
  */
 async function finalizePlaceholderFromHosted(
-  app: IgggyPlugin['app'],
+  plugin: IgggyPlugin,
   placeholderFile: TFile,
   note: HostedNoteResult,
   opts: { audioPath?: string; embedAudio?: boolean; showTasks?: boolean }
 ): Promise<void> {
+  const app = plugin.app
   // Parse JSON fields stored as strings in the DB
   const keyTopics = note.keyTopics
     ? JSON.parse(note.keyTopics) as Array<{ topic: string; bullets: string[] }>
@@ -334,13 +336,22 @@ async function finalizePlaceholderFromHosted(
     })),
   }
 
-  await finalizePlaceholder(app, placeholderFile, noteContent, {
-    date: new Date(note.createdAt).toISOString().slice(0, 10),
+  const date = new Date(note.createdAt).toISOString().slice(0, 10)
+  const igggyId = await finalizePlaceholder(app, placeholderFile, noteContent, {
+    date,
     transcript: note.rawTranscript,
     durationSec: note.audioDurationSec ?? undefined,
     audioPath: opts.audioPath,
     embedAudio: opts.embedAudio ?? false,
     showTasks: opts.showTasks ?? true,
+  })
+
+  // Register the vault igggyId on the DB record (non-blocking)
+  void syncNoteToCloud(plugin, igggyId, noteContent, {
+    transcript: note.rawTranscript,
+    durationSec: note.audioDurationSec ?? undefined,
+    date,
+    source: 'plugin',
   })
 }
 
@@ -428,7 +439,7 @@ export async function runProcessingPipeline(
 
     // ── Finalize ─────────────────────────────────────────────────────────────
     step = 'writing note'
-    await finalizePlaceholder(app, placeholderFile, noteContent, {
+    const igggyId = await finalizePlaceholder(app, placeholderFile, noteContent, {
       date,
       transcript,
       durationSec,
@@ -437,6 +448,9 @@ export async function runProcessingPipeline(
       showTasks: settings.showTasks,
       analysisJson,
     })
+
+    // ── Push to cloud (non-blocking) ──────────────────────────────────────────
+    void syncNoteToCloud(plugin, igggyId, noteContent, { transcript, durationSec, date, analysisJson })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[Igggy] Error during "${step}":`, err)

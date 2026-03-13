@@ -9,7 +9,7 @@ export interface RegenOptions {
 }
 
 export class RegenerateModal extends Modal {
-  private density: RegenOptions['density'] = 'standard'
+  private density: RegenOptions['density']
   private includeTasks: boolean
   private customPrompt = ''
 
@@ -20,6 +20,7 @@ export class RegenerateModal extends Modal {
     private onSubmit: (options: RegenOptions) => void
   ) {
     super(app)
+    this.density = plugin.settings.noteDensity
     this.includeTasks = plugin.settings.showTasks
   }
 

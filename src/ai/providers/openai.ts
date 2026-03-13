@@ -1,23 +1,18 @@
 /**
  * GPT-4o Mini summarization provider — two-pass adaptive pipeline.
  *
- * Uses the same prompts as ClaudeProvider (from src/ai/prompt.ts).
  * Key adaptations for GPT-4o:
  *   - Prompt goes in { role: 'system' } instead of a top-level system param
  *   - response_format: { type: 'json_object' } enables JSON mode
  *   - Model: gpt-4o-mini for both analysis and summarization (cheaper, fast)
+ *
+ * Prompts and validators come from @igggy/core.
  */
 
 import { requestUrl } from 'obsidian'
-import { buildAnalysisPrompt, buildPrompt } from '../prompt'
-import type { TranscriptMeta } from './types'
-import type {
-  SummarizationProvider,
-  SummarizeOptions,
-  NoteContent,
-  TranscriptAnalysis,
-} from './types'
-import { normalizeNoteType } from './types'
+import { buildAnalysisPrompt, buildPrompt, validateNoteContent, validateAnalysis } from '@igggy/core'
+import type { TranscriptMeta, NoteContent, TranscriptAnalysis } from '@igggy/core'
+import type { SummarizationProvider, SummarizeOptions } from './types'
 
 export class OpenAIGPT4oProvider implements SummarizationProvider {
   constructor(private apiKey: string) {}
@@ -55,7 +50,7 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
     const data = JSON.parse(response.text)
     const text: string = data.choices?.[0]?.message?.content ?? ''
 
-    return parseAnalysis(text)
+    return validateAnalysis(JSON.parse(text.trim()))
   }
 
   /**
@@ -95,54 +90,6 @@ export class OpenAIGPT4oProvider implements SummarizationProvider {
     const data = JSON.parse(response.text)
     const text: string = data.choices?.[0]?.message?.content ?? ''
 
-    return parseNoteContent(text)
+    return validateNoteContent(JSON.parse(text.trim()))
   }
-}
-
-// ── JSON parsers ─────────────────────────────────────────────────────────────
-
-function parseAnalysis(text: string): TranscriptAnalysis {
-  const parsed = JSON.parse(text.trim())
-
-  // Normalize recording type (in case AI returns a legacy value)
-  parsed.recordingType = normalizeNoteType(parsed.recordingType ?? 'MEETING')
-
-  // Ensure all content signals exist with boolean defaults
-  const signals = parsed.contentSignals ?? {}
-  parsed.contentSignals = {
-    hasDecisions: Boolean(signals.hasDecisions),
-    hasFollowUps: Boolean(signals.hasFollowUps),
-    hasKeyTerms: Boolean(signals.hasKeyTerms),
-    hasSpeakerDiscussion: Boolean(signals.hasSpeakerDiscussion),
-    hasReflectiveProse: Boolean(signals.hasReflectiveProse),
-    hasIdeaDevelopment: Boolean(signals.hasIdeaDevelopment),
-  }
-
-  parsed.speakerCount = parsed.speakerCount ?? 1
-  parsed.voiceInstructions = parsed.voiceInstructions ?? null
-  parsed.toneRegister = parsed.toneRegister === 'casual' ? 'casual' : 'formal'
-  parsed.primaryFocus = parsed.primaryFocus ?? ''
-
-  return parsed as TranscriptAnalysis
-}
-
-function parseNoteContent(text: string): NoteContent {
-  const parsed = JSON.parse(text.trim())
-
-  // Normalize note type
-  parsed.noteType = normalizeNoteType(parsed.noteType ?? 'MEETING')
-
-  parsed.keyTopics = parsed.keyTopics ?? []
-  parsed.content = parsed.content ?? []
-  parsed.decisions = parsed.decisions ?? []
-  parsed.actionItems = parsed.actionItems ?? []
-
-  // For LECTURE notes, route keyTerms into the decisions field (lectures never have
-  // decisions). Mirrors the same logic in web app validate.ts.
-  if (parsed.noteType === 'LECTURE' && Array.isArray(parsed.keyTerms) && parsed.keyTerms.length > 0) {
-    parsed.decisions = parsed.keyTerms
-  }
-  delete parsed.keyTerms
-
-  return parsed as NoteContent
 }

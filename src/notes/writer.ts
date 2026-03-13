@@ -1,6 +1,7 @@
 import { App, TFile, normalizePath } from 'obsidian'
 import { generateMarkdown, type NoteTemplateData } from './template'
-import type { NoteContent } from '../ai/providers/types'
+import { sanitizeNoteTitle, formatNoteFilename } from '@igggy/core'
+import type { NoteContent } from '@igggy/core'
 
 export interface WriteNoteOptions {
   outputFolder: string
@@ -30,14 +31,7 @@ export async function writeNote(
 ): Promise<TFile> {
   const { outputFolder, date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = options
 
-  // Sanitize title for use as filename
-  const safeTitle = noteContent.title
-    .replace(/[/\\:*?"<>|#^[\]]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100)
-
-  const filename = `${date} - ${safeTitle}.md`
+  const filename = formatNoteFilename(noteContent.title, date)
   const folderPath = normalizePath(outputFolder)
   const filePath = normalizePath(`${folderPath}/${filename}`)
 
@@ -280,7 +274,7 @@ export async function finalizePlaceholder(
   file: TFile,
   noteContent: NoteContent,
   options: FinalizeOptions
-): Promise<void> {
+): Promise<string> {
   const { date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = options
 
   // Reuse the igggy_id generated during createPlaceholder
@@ -304,14 +298,8 @@ export async function finalizePlaceholder(
   await app.vault.modify(file, finalMarkdown)
 
   // Rename to the real AI-generated title if it differs from the placeholder name
-  const safeTitle = noteContent.title
-    .replace(/[/\\:*?"<>|#^[\]]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 100)
-
   const folderPath = file.parent?.path ?? ''
-  const targetFilename = `${date} - ${safeTitle}.md`
+  const targetFilename = formatNoteFilename(noteContent.title, date)
   const targetPath = normalizePath(
     folderPath ? `${folderPath}/${targetFilename}` : targetFilename
   )
@@ -319,4 +307,6 @@ export async function finalizePlaceholder(
   if (file.path !== targetPath && !app.vault.getAbstractFileByPath(targetPath)) {
     await app.vault.rename(file, targetPath)
   }
+
+  return igggyId
 }

@@ -93,6 +93,21 @@ export class RecordingSession {
         ) {
           throw new PickerCancelledError()
         }
+        // Provide a user-friendly error for system audio capture failures in Obsidian
+        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+          throw new Error(
+            'System audio capture is not available. Obsidian may not support this feature on your system. ' +
+            'Try using the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
+            'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
+          )
+        }
+        if (err instanceof TypeError || (err instanceof DOMException && err.name === 'NotSupportedError')) {
+          throw new Error(
+            'System audio capture is not supported in this version of Obsidian. ' +
+            'Use the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
+            'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
+          )
+        }
         throw err
       }
 

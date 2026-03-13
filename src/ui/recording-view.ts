@@ -17,7 +17,7 @@
  *        → idle (on completion or discard)
  */
 
-import { ItemView, Notice, WorkspaceLeaf } from 'obsidian'
+import { ItemView, Notice, WorkspaceLeaf, setIcon } from 'obsidian'
 import type { TFile } from 'obsidian'
 import type IgggyPlugin from '../main'
 import { RecordingSession, PickerCancelledError, type RecordingMode } from '../recording/session'
@@ -35,6 +35,14 @@ import {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const RECORDING_VIEW_TYPE = 'igggy-recording'
+
+/** Create a button with an Obsidian icon + text label */
+function iconButton(parent: HTMLElement, icon: string, text: string, cls: string): HTMLButtonElement {
+  const btn = parent.createEl('button', { cls })
+  setIcon(btn, icon)
+  btn.appendText(` ${text}`)
+  return btn
+}
 
 const BAR_COUNT = 28
 const SILENCE_THRESHOLD = 5      // max bin value (0–255) below which we consider it silence
@@ -82,7 +90,7 @@ export class RecordingView extends ItemView {
   // ── ItemView interface ─────────────────────────────────────────────────────
 
   getViewType(): string { return RECORDING_VIEW_TYPE }
-  getDisplayText(): string { return 'Igggy Recording' }
+  getDisplayText(): string { return 'Igggy recording' }
   getIcon(): string { return 'mic' }
 
   onOpen(): Promise<void> {
@@ -160,10 +168,7 @@ export class RecordingView extends ItemView {
       })
     }
 
-    const btn = body.createEl('button', {
-      text: '⏺ start recording',
-      cls: 'igggy-rv-btn-primary',
-    })
+    const btn = iconButton(body, 'mic', 'Start recording', 'igggy-rv-btn-primary')
     btn.disabled = !!keyError
     btn.addEventListener('click', () => { void this.handleStart() })
 
@@ -189,7 +194,19 @@ export class RecordingView extends ItemView {
       hintEl.toggleClass('igggy-hidden', !checkbox.checked)
     })
 
-    body.createEl('button', { text: '↑ from file…', cls: 'igggy-rv-btn-secondary' })
+    // Custom prompt — optional instructions for the AI (set before recording)
+    const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
+    const promptTextarea = promptContainer.createEl('textarea', {
+      placeholder: 'What do you want from this note? (optional)',
+      cls: 'igggy-rv-custom-prompt-input',
+    })
+    promptTextarea.rows = 2
+    promptTextarea.value = this.customPrompt
+    promptTextarea.addEventListener('input', () => {
+      this.customPrompt = promptTextarea.value
+    })
+
+    iconButton(body, 'upload', 'From file…', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => { void openAudioFilePicker(this.plugin) })
   }
 
@@ -218,21 +235,25 @@ export class RecordingView extends ItemView {
 
     // Mute toggle — only shown when a mic stream is active ('mic' or 'both' modes)
     if (this.session?.hasMic()) {
-      const muteBtn = controls.createEl('button', { text: '🎙️ mute', cls: 'igggy-rv-btn-secondary' })
+      const muteBtn = iconButton(controls, 'mic', 'Mute', 'igggy-rv-btn-secondary')
       muteBtn.addEventListener('click', () => {
         if (this.session?.isMuted()) {
           this.session.unmute()
-          muteBtn.textContent = '🎙️ mute'
+          muteBtn.empty()
+          setIcon(muteBtn, 'mic')
+          muteBtn.appendText(' Mute')
         } else {
           this.session?.mute()
-          muteBtn.textContent = '🔇 unmute'
+          muteBtn.empty()
+          setIcon(muteBtn, 'mic-off')
+          muteBtn.appendText(' Unmute')
         }
       })
     }
 
-    controls.createEl('button', { text: '⏸ pause', cls: 'igggy-rv-btn-secondary' })
+    iconButton(controls, 'pause', 'Pause', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => this.handlePause())
-    controls.createEl('button', { text: '■ stop', cls: 'igggy-rv-btn-primary' })
+    iconButton(controls, 'square', 'Stop', 'igggy-rv-btn-primary')
       .addEventListener('click', () => { void this.handleStop() })
   }
 
@@ -252,13 +273,13 @@ export class RecordingView extends ItemView {
     this.startTimer(timerEl)
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
-    controls.createEl('button', { text: '▶ resume', cls: 'igggy-rv-btn-secondary' })
+    iconButton(controls, 'play', 'Resume', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => this.handleResume())
-    controls.createEl('button', { text: '■ stop', cls: 'igggy-rv-btn-primary' })
+    iconButton(controls, 'square', 'Stop', 'igggy-rv-btn-primary')
       .addEventListener('click', () => { void this.handleStop() })
   }
 
-  // ── Stopped (confirm step) ─────────────────────────────────────────────────
+  // ── Stopped (confirm step — legacy, skipped by auto-process) ─────────────
 
   private renderStopped(body: HTMLElement): void {
     const summary = body.createDiv({ cls: 'igggy-rv-summary' })
@@ -284,9 +305,9 @@ export class RecordingView extends ItemView {
     })
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
-    controls.createEl('button', { text: 'Delete recording', cls: 'igggy-rv-btn-secondary' })
+    iconButton(controls, 'trash-2', 'Delete recording', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => this.transition('confirming_delete'))
-    controls.createEl('button', { text: 'Create note', cls: 'igggy-rv-btn-primary' })
+    iconButton(controls, 'file-plus', 'Create note', 'igggy-rv-btn-primary')
       .addEventListener('click', () => { void this.handleProcess() })
   }
 
@@ -298,9 +319,9 @@ export class RecordingView extends ItemView {
     summary.createEl('p', { text: 'The note draft will also be removed.', cls: 'igggy-rv-summary-detail' })
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
-    controls.createEl('button', { text: 'Cancel', cls: 'igggy-rv-btn-secondary' })
+    iconButton(controls, 'x', 'Cancel', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => this.transition('stopped'))
-    controls.createEl('button', { text: 'Delete', cls: 'igggy-rv-btn-primary' })
+    iconButton(controls, 'trash-2', 'Delete', 'igggy-rv-btn-primary')
       .addEventListener('click', () => { void this.handleDiscardConfirmed() })
   }
 
@@ -320,13 +341,17 @@ export class RecordingView extends ItemView {
       text: this.processLabel || 'Processing…',
       cls: 'igggy-rv-hint',
     })
+
+    // Cancel button — allows aborting during processing
+    iconButton(body, 'x', 'Cancel', 'igggy-rv-btn-secondary')
+      .addEventListener('click', () => { void this.handleDiscardConfirmed() })
   }
 
   // ── Error ──────────────────────────────────────────────────────────────────
 
   private renderError(body: HTMLElement): void {
     body.createEl('p', { text: this.errorMsg, cls: 'igggy-rv-error' })
-    body.createEl('button', { text: 'Try again', cls: 'igggy-rv-btn-secondary' })
+    iconButton(body, 'rotate-ccw', 'Try again', 'igggy-rv-btn-secondary')
       .addEventListener('click', () => this.transition('idle'))
   }
 
@@ -512,7 +537,8 @@ export class RecordingView extends ItemView {
     this.plugin.activeRecording = null
     // Keep plugin.recordingPlaceholder — handleProcess reads it via this.placeholderFile
 
-    this.transition('stopped')
+    // Auto-process: skip confirm step, start processing immediately
+    void this.handleProcess()
   }
 
   private async handleProcess(): Promise<void> {

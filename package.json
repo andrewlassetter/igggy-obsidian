@@ -4,8 +4,9 @@
   "description": "Igggy — AI structured meeting notes in your Obsidian vault",
   "main": "main.js",
   "scripts": {
-    "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "build:core": "cd ../igggy/packages/core && npm run build",
+    "dev": "npm run build:core && node esbuild.config.mjs",
+    "build": "npm run build:core && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
     "lint": "eslint src --ext .ts"
   },
   "keywords": [
@@ -27,6 +28,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@breezystack/lamejs": "^1.2.7"
+    "@breezystack/lamejs": "^1.2.7",
+    "@igggy/core": "file:../igggy/packages/core"
   }
 }

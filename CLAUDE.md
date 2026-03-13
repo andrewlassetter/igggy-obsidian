@@ -5,8 +5,9 @@
 ## Commands
 
 ```bash
-npm run dev       # esbuild in watch mode — auto-rebuilds to main.js on save
-npm run build     # tsc type-check + esbuild production bundle (no sourcemaps)
+npm run dev       # builds @igggy/core, then esbuild in watch mode — auto-rebuilds to main.js on save
+npm run build     # builds @igggy/core, tsc type-check + esbuild production bundle (no sourcemaps)
+npm run build:core # builds @igggy/core only (cd ../igggy/packages/core && npm run build)
 npm run lint      # eslint on src/ (TypeScript)
 ```
 
@@ -22,9 +23,15 @@ npm run lint      # eslint on src/ (TypeScript)
 
 Audio files in the user's Obsidian vault are selected via a fuzzy modal or context menu. The audio is pre-processed by `src/audio/preprocessor.ts` (Web Audio API + lamejs: mono 16kHz 32kbps MP3) to reduce size before upload. The compressed audio is sent to a transcription provider (OpenAI Whisper or Deepgram Nova-3) via HTTP.
 
+### `@igggy/core` Dependency
+
+The plugin consumes `@igggy/core` via a `file:` dependency (`"@igggy/core": "file:../igggy/packages/core"`). Shared types (`NoteContent`, `TranscriptAnalysis`, `NoteType`, etc.), prompt builders (`buildAnalysisPrompt`, `buildSummarizationPrompt`, `buildPrompt`), and validators (`validateNoteContent`, `validateAnalysis`) all come from core. esbuild inlines the core package into `main.js` — no external dependency at runtime.
+
+**When modifying core**: Run `npm run build:core` (or `npm run build` which does it automatically). The plugin's `node_modules/@igggy/core` is a symlink to `../igggy/packages/core`.
+
 ### AI Summarization (Two-Pass Pipeline)
 
-The transcript goes through a two-pass adaptive pipeline (ported from web app `packages/core/src/prompt.ts`):
+The transcript goes through a two-pass adaptive pipeline via `@igggy/core`:
 
 1. **Pass 1 — Analysis** (Haiku / GPT-4o Mini): Classifies recording type (`MEETING`, `MEMO`, `LECTURE`), counts speakers, detects 6 content signals (`hasDecisions`, `hasFollowUps`, `hasKeyTerms`, `hasSpeakerDiscussion`, `hasReflectiveProse`, `hasIdeaDevelopment`), detects voice instructions to Igggy, assesses tone, identifies primary focus. Output: `TranscriptAnalysis` JSON.
 2. **Pass 2 — Adaptive Summarization** (Sonnet / GPT-4o Mini): `buildSummarizationPrompt()` composes sections dynamically based on analysis signals — only includes Decisions, Tasks, Key Terms, Speaker Attribution, etc. when signals warrant. Output: `NoteContent` JSON.
@@ -44,8 +51,7 @@ The pipeline is orchestrated by `runProcessingPipeline()` in `commands.ts`: prep
 | `src/audio/preprocessor.ts` | Web Audio API + lamejs: compress audio to 32kbps MP3 before upload |
 | `src/audio/providers/openai.ts` | OpenAI Whisper transcription (`whisper-1`, `verbose_json`) |
 | `src/audio/providers/deepgram.ts` | Deepgram Nova-3 transcription with speaker diarization |
-| `src/ai/prompt.ts` | `buildAnalysisPrompt()` (Pass 1), `buildSummarizationPrompt()` (Pass 2 adaptive), `buildPrompt()` (router) |
-| `src/ai/providers/types.ts` | `NoteType` (3 values), `TranscriptAnalysis`, `NoteContent`, `SummarizationProvider`, `normalizeNoteType()` |
+| `src/ai/providers/types.ts` | Plugin-only interfaces: `SummarizationProvider`, `SummarizeOptions`. Shared types come from `@igggy/core` |
 | `src/ai/providers/claude.ts` | Claude provider: `analyze()` (Haiku) + `summarize()` (Sonnet) |
 | `src/ai/providers/openai.ts` | OpenAI provider: `analyze()` + `summarize()` (GPT-4o Mini for both) |
 | `src/notes/template.ts` | `generateMarkdown()` — builds the full markdown note from `NoteContent` |
@@ -67,17 +73,43 @@ The pipeline is orchestrated by `runProcessingPipeline()` in `commands.ts`: prep
 - **Key Highlights** — the rendered `## Key Highlights` section header (field name in code: `keyTopics`)
 - Note types in UI: Meeting, Memo, Lecture (title case) — only 3 types
 - Note types in code/frontmatter: `MEETING`, `MEMO`, `LECTURE` (screaming snake case)
-- Legacy types `ONE_ON_ONE` and `JOURNAL` are mapped via `normalizeNoteType()` in `types.ts` — never create new records with these values
+- Legacy types `ONE_ON_ONE` and `JOURNAL` are mapped via `normalizeNoteType()` from `@igggy/core` — never create new records with these values
 
 ### AI field names vs. display names (do not conflate)
-The prompt (`src/ai/prompt.ts`) asks the AI to return `keyTopics` and `actionItems` — these are the AI-facing JSON keys. They map to display names in `src/notes/template.ts`:
+The prompt (`@igggy/core/src/prompt.ts`) asks the AI to return `keyHighlights` and `actionItems` — these are the AI-facing JSON keys. Core's `validateNoteContent()` maps `keyHighlights` → `keyTopics`. Display names in `src/notes/template.ts`:
 - `keyTopics` → rendered as `## Key Highlights`
 - `actionItems` → rendered as `## Tasks`
 
-Do not rename the AI-facing field names in the prompt — it would break parsing of AI responses.
+Do not rename the AI-facing field names in the core prompt — it would break parsing of AI responses.
 
-### Sync with web app
-This plugin ports shared logic from `@igggy/core` (web app `packages/core/`) rather than consuming it as a dependency. When the web app changes `NoteContent` shape, prompt rules, or frontmatter schema, mirror the change here. Check `docs/PLUGIN-INTEGRATION.md` in the web app repo (`andrewlassetter/igggy`) for the living integration checklist.
+## Cross-Platform Parity
+
+Igggy ships on two platforms: the web app (`../igggy`) and this Obsidian plugin.
+
+**When planning any feature or change:**
+1. Read the web app's `../igggy/docs/PARITY-MANIFEST.md` for the shared contract surface and current feature parity state
+2. Read `../igggy/docs/PLUGIN-INTEGRATION.md` for the living integration checklist
+3. Identify if the change affects shared contracts (see list below)
+4. If it does: include a **"Cross-Platform Implications"** section in the plan that specs what the web app needs. Ask the user how they want to handle the web side.
+5. If it's a plugin-only feature (vault-specific, Obsidian UI), note that explicitly so the user can confirm.
+
+**When implementing:**
+- If you modify prompt logic, types, or validation: flag it. These must stay in sync with `@igggy/core`.
+- If you add a new setting or preference: flag it. The web app may need a matching setting.
+- If you change frontmatter schema: flag it. The web app's folder sync depends on this.
+- After completing any feature work, update `../igggy/docs/PARITY-MANIFEST.md` and `../igggy/docs/PLUGIN-INTEGRATION.md` if parity state changed.
+
+**Shared contracts to watch:**
+- `@igggy/core` — consumed via `file:` reference; types, prompts, validation
+- Frontmatter schema — `igggy_id`, `type`, `igggy_analysis`, `source`, `tags`
+- Settings/preferences — tone, density, showTasks, provider selections
+- Note types — MEETING, MEMO, LECTURE
+
+**Plan mode requirement:** Every plan must include a "## Cross-Platform Implications" section with:
+- Which shared contracts this feature touches
+- What the web app needs to match (or why it doesn't apply)
+- Spec for the web app implementation if applicable
+- Ask the user: "How do you want to handle the web app side?"
 
 ## Docs (`/docs`)
 

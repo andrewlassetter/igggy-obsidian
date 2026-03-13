@@ -1,5 +1,5 @@
-import type { NoteContent } from '../ai/providers/types'
-import { normalizeNoteType } from '../ai/providers/types'
+import type { NoteContent } from '@igggy/core'
+import { normalizeNoteType } from '@igggy/core'
 
 export interface NoteTemplateData {
   noteContent: NoteContent
@@ -13,6 +13,38 @@ export interface NoteTemplateData {
   analysisJson?: string  // JSON-stringified TranscriptAnalysis from Pass 1 — stored for regen
 }
 
+/**
+ * Split a wall-of-text transcript into readable paragraphs.
+ * If the transcript already has paragraph breaks (\n\n), preserves them.
+ * Otherwise, inserts breaks every ~150 words at sentence boundaries.
+ */
+function formatTranscriptParagraphs(raw: string): string[] {
+  const existing = raw.split('\n\n').filter(Boolean)
+  if (existing.length > 1) return existing
+
+  // Single block — split at sentence boundaries every ~150 words
+  const sentences = raw.split(/(?<=[.!?])\s+/)
+  const paragraphs: string[] = []
+  let current: string[] = []
+  let wordCount = 0
+
+  for (const sentence of sentences) {
+    const words = sentence.split(/\s+/).length
+    current.push(sentence)
+    wordCount += words
+    if (wordCount >= 150) {
+      paragraphs.push(current.join(' '))
+      current = []
+      wordCount = 0
+    }
+  }
+  if (current.length > 0) {
+    paragraphs.push(current.join(' '))
+  }
+
+  return paragraphs.length > 0 ? paragraphs : [raw]
+}
+
 export function generateMarkdown(data: NoteTemplateData): string {
   const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = data
   const { title, summary, content, keyTopics, decisions, actionItems } = noteContent
@@ -20,6 +52,8 @@ export function generateMarkdown(data: NoteTemplateData): string {
   const noteType = normalizeNoteType(noteContent.noteType)
 
   // --- Frontmatter ---
+  // All fields kept for regen compatibility (regen parses duration_sec, audio, igggy_analysis).
+  // User hides the Properties pane via Obsidian settings for a clean look.
   const frontmatterLines = [
     '---',
     `igggy_id: ${igggyId}`,
@@ -28,9 +62,9 @@ export function generateMarkdown(data: NoteTemplateData): string {
     `type: ${noteType}`,
     durationSec != null ? `duration_sec: ${durationSec}` : null,
     audioPath ? `audio: "${audioPath}"` : null,
-    analysisJson ? `igggy_analysis: '${analysisJson.replace(/'/g, "''")}'` : null,
     'source: igggy',
     `tags: [igggy, ${noteType.toLowerCase()}]`,
+    analysisJson ? `igggy_analysis: '${analysisJson.replace(/'/g, "''")}'` : null,
     '---',
   ].filter(Boolean) as string[]
   const frontmatter = frontmatterLines.join('\n')
@@ -75,21 +109,23 @@ export function generateMarkdown(data: NoteTemplateData): string {
           .join('\n')}`
       : null
 
-  // --- Transcript (collapsible) ---
+  // --- Transcript (collapsible Obsidian callout with paragraph breaks) ---
   const transcriptSection = transcript
-    ? `## Transcript\n\n<details>\n<summary>Full transcript</summary>\n\n${transcript}\n\n</details>`
+    ? `> [!note]- Transcript\n>\n${formatTranscriptParagraphs(transcript).map(p => `> ${p}`).join('\n>\n')}`
     : null
 
-  const sections = [
-    frontmatter,
-    audioEmbed,
-    summarySection,
-    contentSection,
-    keyHighlightsSection,
-    decisionsSection,
-    actionItemsSection,
-    transcriptSection,
-  ].filter(Boolean) as string[]
+  // Section order varies by type — highlights-first for all types
+  const sections: (string | null)[] = [frontmatter, audioEmbed, summarySection]
 
-  return sections.join('\n\n') + '\n'
+  if (noteType === 'MEMO') {
+    // Memo: highlights (primary) → decisions → supplementary prose → tasks
+    sections.push(keyHighlightsSection, decisionsSection, contentSection, actionItemsSection)
+  } else {
+    // Meeting / Lecture: highlights → decisions/keyTerms → tasks (no prose)
+    sections.push(keyHighlightsSection, decisionsSection, actionItemsSection)
+  }
+
+  sections.push(transcriptSection)
+
+  return (sections.filter(Boolean) as string[]).join('\n\n') + '\n'
 }

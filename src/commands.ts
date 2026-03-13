@@ -5,8 +5,9 @@ import { OpenAIWhisperProvider } from './audio/providers/openai'
 import { DeepgramProvider } from './audio/providers/deepgram'
 import { ClaudeProvider } from './ai/providers/claude'
 import { OpenAIGPT4oProvider } from './ai/providers/openai'
-import { normalizeNoteType } from './ai/providers/types'
-import type { SummarizationProvider, TranscriptAnalysis } from './ai/providers/types'
+import { normalizeNoteType } from '@igggy/core'
+import type { TranscriptAnalysis } from '@igggy/core'
+import type { SummarizationProvider } from './ai/providers/types'
 import {
   createPlaceholder,
   updatePlaceholderStage,
@@ -18,6 +19,65 @@ import { RegenerateModal, type RegenOptions } from './ui/regenerate-modal'
 
 const AUDIO_EXTENSIONS = new Set(['m4a', 'mp3', 'wav', 'webm', 'ogg', 'flac', 'aac', 'mp4'])
 const APP_URL = 'https://app.igggy.ai'
+
+// ── Cloud sync helper ─────────────────────────────────────────────────────────
+
+/**
+ * Non-blocking push of a completed note to the Igggy cloud DB via
+ * POST /api/notes/sync. Fires after every successful vault write.
+ * Failures are logged but never surface to the user — the vault file
+ * is always the reliable output; the cloud DB is a backup.
+ *
+ * Only fires when:
+ *   - cloudBackupEnabled + folderSyncEnabled are both true in settings
+ *   - A valid hosted access token is available
+ */
+async function syncNoteToCloud(
+  plugin: IgggyPlugin,
+  igggyId: string,
+  noteContent: { title: string; noteType: string; summary: string; keyTopics?: unknown; content?: unknown; decisions?: unknown; actionItems?: Array<{ content: string; owner?: string | null; context?: string }> },
+  extras: { transcript?: string; durationSec?: number; date?: string; analysisJson?: string; source?: string }
+): Promise<void> {
+  const { settings } = plugin
+
+  if (!settings.cloudBackupEnabled || !settings.folderSyncEnabled) return
+  if (!settings.hostedAccessToken) return
+
+  const token = await getHostedToken(plugin)
+
+  const body = {
+    igggy_id: igggyId,
+    title: noteContent.title,
+    type: noteContent.noteType,
+    date: extras.date ? `${extras.date}T00:00:00Z` : new Date().toISOString(),
+    duration_sec: extras.durationSec ?? null,
+    source: extras.source ?? 'plugin',
+    transcript: extras.transcript ?? '',
+    summary: noteContent.summary,
+    key_topics: noteContent.keyTopics ?? null,
+    content: noteContent.content ?? null,
+    decisions: noteContent.decisions ?? null,
+    tasks: (noteContent.actionItems ?? []).map((t) => ({
+      content: t.content,
+      owner: t.owner ?? null,
+      context: t.context ?? null,
+    })),
+    analysis_json: extras.analysisJson ? JSON.parse(extras.analysisJson) : null,
+  }
+
+  // Fire-and-forget — don't await, don't throw
+  requestUrl({
+    url: `${APP_URL}/api/notes/sync`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+  }).catch((err) => {
+    console.warn('[Igggy] Cloud sync failed (non-blocking):', err)
+  })
+}
 
 // ── Key validation ────────────────────────────────────────────────────────────
 
@@ -360,7 +420,11 @@ export async function runProcessingPipeline(
       '\u2728 Generating note\u2026',
     ])
 
-    const noteContent = await summarizationProvider.summarize(transcript, { durationSec, capturedAt }, { analysis, customPrompt })
+    const noteContent = await summarizationProvider.summarize(transcript, { durationSec, capturedAt }, {
+      analysis,
+      customPrompt,
+      preferences: { density: settings.noteDensity, tone: settings.noteTone },
+    })
 
     // ── Finalize ─────────────────────────────────────────────────────────────
     step = 'writing note'
@@ -513,13 +577,28 @@ async function regenerateNote(
   // ── 2. Extract transcript ───────────────────────────────────────────────────
   let transcript: string | undefined
 
-  // Try <details> pattern first (plugin-generated notes)
-  const detailsMatch = content.match(
-    /## Transcript\s*\n+<details>\s*\n*<summary>Full transcript<\/summary>\s*\n+([\s\S]*?)\n*\s*<\/details>/
-  )
-  if (detailsMatch) {
-    transcript = detailsMatch[1].trim()
-  } else {
+  // Try Obsidian callout pattern first (new plugin-generated notes)
+  const calloutMatch = content.match(/> \[!note\]-?\s*Transcript\s*\n((?:>.*\n?)*)/i)
+  if (calloutMatch) {
+    // Strip leading "> " from each line and rejoin
+    transcript = calloutMatch[1]
+      .split('\n')
+      .map(line => line.replace(/^>\s?/, ''))
+      .join('\n')
+      .trim()
+  }
+
+  // Try <details> pattern (older plugin-generated notes)
+  if (!transcript) {
+    const detailsMatch = content.match(
+      /## Transcript\s*\n+<details>\s*\n*<summary>Full transcript<\/summary>\s*\n+([\s\S]*?)\n*\s*<\/details>/
+    )
+    if (detailsMatch) {
+      transcript = detailsMatch[1].trim()
+    }
+  }
+
+  if (!transcript) {
     // Fall back to bare transcript (web app synced notes)
     const bareMatch = content.match(/## Transcript\s*\n+([\s\S]*?)(?=\n## |\n---\s*$|$)/)
     if (bareMatch) {
@@ -549,7 +628,7 @@ async function regenerateNote(
       analysis,
       includeTasks: options.includeTasks,
       customPrompt: options.customPrompt || undefined,
-      preferences: { density: options.density, tone: 'professional' },
+      preferences: { density: options.density, tone: plugin.settings.noteTone },
     })
 
     // ── 4. Write result ─────────────────────────────────────────────────────

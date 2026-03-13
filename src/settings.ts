@@ -23,11 +23,22 @@ export interface IgggySettings {
 
   includeSystemAudio: boolean  // capture system audio alongside mic (triggers OS screen-picker)
 
+  // ── Note summarization ──────────────────────────────────────────────────────
+
+  noteTone: 'casual' | 'professional'                       // default: 'professional'
+  noteDensity: 'concise' | 'standard' | 'detailed'          // default: 'standard'
+
   // ── Output ──────────────────────────────────────────────────────────────────
 
   outputFolder: string    // vault folder, e.g. "Igggy"
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
   showTasks: boolean      // include ## Tasks section in generated notes
+
+  // ── Folder & Sync ────────────────────────────────────────────────────────────
+
+  cloudBackupEnabled: boolean  // whether to push notes to Igggy cloud DB after each write
+  folderSyncEnabled: boolean   // whether push-on-write sync is active (enables cloudBackupEnabled calls)
+  lastSyncedAt: number | null  // Unix ms timestamp of last on-demand re-index (for display + rate-limit guard)
 }
 
 export const DEFAULT_SETTINGS: IgggySettings = {
@@ -41,7 +52,12 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   hostedRefreshToken: '',
   hostedTokenExpiry: 0,
   includeSystemAudio: false,
+  noteTone: 'professional',
+  noteDensity: 'standard',
   outputFolder: 'Igggy',
   embedAudio: true,
   showTasks: true,
+  cloudBackupEnabled: false,
+  folderSyncEnabled: false,
+  lastSyncedAt: null,
 }

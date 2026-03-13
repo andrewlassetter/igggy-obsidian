@@ -39,6 +39,38 @@ export class IgggySettingsTab extends PluginSettingTab {
       this.renderBYOKSection(containerEl)
     }
 
+    // ── Note summarization (always visible) ─────────────────────────
+    new Setting(containerEl).setName('Note summarization').setHeading()
+
+    new Setting(containerEl)
+      .setName('Tone')
+      .setDesc('Writing style for generated notes.')
+      .addDropdown((dd) =>
+        dd
+          .addOption('professional', 'Professional')
+          .addOption('casual', 'Casual')
+          .setValue(this.plugin.settings.noteTone)
+          .onChange(async (value) => {
+            this.plugin.settings.noteTone = value as 'casual' | 'professional'
+            await this.plugin.saveSettings()
+          })
+      )
+
+    new Setting(containerEl)
+      .setName('Detail level')
+      .setDesc('How thorough generated notes should be by default.')
+      .addDropdown((dd) =>
+        dd
+          .addOption('concise', 'Concise — one bullet per point')
+          .addOption('standard', 'Standard — balanced clarity and brevity')
+          .addOption('detailed', 'Detailed — thorough with nuances and context')
+          .setValue(this.plugin.settings.noteDensity)
+          .onChange(async (value) => {
+            this.plugin.settings.noteDensity = value as 'concise' | 'standard' | 'detailed'
+            await this.plugin.saveSettings()
+          })
+      )
+
     // ── Output (always visible) ────────────────────────────────────
     new Setting(containerEl).setName('Output').setHeading()
 

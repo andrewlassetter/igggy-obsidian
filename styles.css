@@ -147,6 +147,16 @@
   color: var(--text-normal);
 }
 
+/* Icon sizing inside buttons */
+.igggy-rv-btn-primary .svg-icon,
+.igggy-rv-btn-secondary .svg-icon {
+  width: 14px;
+  height: 14px;
+  display: inline;
+  vertical-align: middle;
+  margin-right: 2px;
+}
+
 /* Side-by-side controls (Pause + Stop, Resume + Stop, Delete + Create note) */
 .igggy-rv-controls {
   display: flex;

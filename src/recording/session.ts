@@ -139,6 +139,8 @@ export class RecordingSession {
     // ── Build audio graph ─────────────────────────────────────────────────────
 
     const audioContext = new AudioContext()
+    // Ensure the context is running — Chromium may start it suspended
+    if (audioContext.state === 'suspended') await audioContext.resume()
     const analyser = audioContext.createAnalyser()
     analyser.fftSize = 64                // 32 frequency bins — plenty for 28 bars
     analyser.smoothingTimeConstant = 0.75 // responsive but not jittery
@@ -200,15 +202,43 @@ export class RecordingSession {
 
   /** Stop recording, release all streams and AudioContext, return the audio blob. */
   async stop(): Promise<Blob> {
-    return new Promise((resolve) => {
-      this.mediaRecorder.onstop = () => {
-        const blob = new Blob(this.chunks, { type: this.mediaRecorder.mimeType })
+    return new Promise((resolve, reject) => {
+      const cleanup = (): void => {
         this.micStream?.getTracks().forEach(t => t.stop())
         this.systemStream?.getTracks().forEach(t => t.stop())
         void this.audioContext.close()
+      }
+
+      // Safety timeout — if onstop never fires, resolve with whatever chunks we have
+      const timeout = setTimeout(() => {
+        console.warn('[Igggy] MediaRecorder.onstop did not fire within 5s — resolving with available chunks')
+        cleanup()
+        resolve(new Blob(this.chunks, { type: this.mediaRecorder.mimeType }))
+      }, 5000)
+
+      this.mediaRecorder.onerror = (event) => {
+        clearTimeout(timeout)
+        cleanup()
+        const errorEvent = event as ErrorEvent
+        reject(new Error(`Recording error: ${errorEvent.message || 'unknown'}`))
+      }
+
+      this.mediaRecorder.onstop = () => {
+        clearTimeout(timeout)
+        const blob = new Blob(this.chunks, { type: this.mediaRecorder.mimeType })
+        cleanup()
         resolve(blob)
       }
-      this.mediaRecorder.stop()
+
+      try {
+        this.mediaRecorder.stop()
+      } catch (err) {
+        clearTimeout(timeout)
+        cleanup()
+        // If stop() throws (e.g. recorder already inactive), resolve with available chunks
+        console.warn('[Igggy] MediaRecorder.stop() threw:', err)
+        resolve(new Blob(this.chunks, { type: this.mediaRecorder.mimeType }))
+      }
     })
   }
 

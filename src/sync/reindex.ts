@@ -1,6 +1,6 @@
 import { Notice, requestUrl } from 'obsidian'
 import type IgggyPlugin from '../main'
-import { getHostedToken, APP_URL } from '../commands'
+import { getAuthToken, APP_URL } from '../commands'
 
 const BATCH_SIZE = 50
 const BATCH_DELAY_MS = 200
@@ -76,7 +76,7 @@ function sleep(ms: number): Promise<void> {
  * Scans the entire vault for Igggy notes (markdown files with an igggy_id
  * frontmatter field) and pushes each to POST /api/notes/sync in batches of 50.
  *
- * Pro only — the server rate-limits this to once per hour.
+ * Starter/Pro only — the server rate-limits this to once per hour.
  * Shows live progress via Obsidian Notice. Handles 429 gracefully.
  */
 export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
@@ -91,7 +91,7 @@ export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
     return
   }
 
-  const token = await getHostedToken(plugin)
+  const token = await getAuthToken(plugin)
   const progressNotice = new Notice(`Syncing notes… 0 / ${igggyFiles.length}`, 0)
 
   let synced = 0

@@ -7,13 +7,13 @@
 ```bash
 npm run dev       # builds @igggy/core, then esbuild in watch mode — auto-rebuilds to main.js on save
 npm run build     # builds @igggy/core, tsc type-check + esbuild production bundle (no sourcemaps)
-npm run build:core # builds @igggy/core only (cd ../igggy/packages/core && npm run build)
+npm run build:core # builds @igggy/core only (cd ../igggy-web/packages/core && npm run build)
 npm run lint      # eslint on src/ (TypeScript)
 ```
 
 ## Dev Environment
 
-- **No `.env` file** — BYOK plugin; API keys are entered at runtime in Obsidian settings, not build-time config
+- **No `.env` file** — Igggy Open mode uses user-provided API keys entered at runtime in Obsidian settings, not build-time config
 - **Output file** — esbuild writes to `main.js` at the repo root (not `dist/`); this is what Obsidian loads
 - **Install in Obsidian for testing** — symlink or copy the repo into `<vault>/.obsidian/plugins/igggy/`; enable the plugin in Obsidian → Settings → Community plugins
 - **Rebuild required** — Obsidian does not hot-reload plugins; after `npm run dev` rebuilds, use the "Reload app without saving" command in Obsidian (or disable/re-enable the plugin)
@@ -25,9 +25,9 @@ Audio files in the user's Obsidian vault are selected via a fuzzy modal or conte
 
 ### `@igggy/core` Dependency
 
-The plugin consumes `@igggy/core` via a `file:` dependency (`"@igggy/core": "file:../igggy/packages/core"`). Shared types (`NoteContent`, `TranscriptAnalysis`, `NoteType`, etc.), prompt builders (`buildAnalysisPrompt`, `buildSummarizationPrompt`, `buildPrompt`), and validators (`validateNoteContent`, `validateAnalysis`) all come from core. esbuild inlines the core package into `main.js` — no external dependency at runtime.
+The plugin consumes `@igggy/core` via a `file:` dependency (`"@igggy/core": "file:../igggy-web/packages/core"`). Shared types (`NoteContent`, `TranscriptAnalysis`, `NoteType`, etc.), prompt builders (`buildAnalysisPrompt`, `buildSummarizationPrompt`, `buildPrompt`), and validators (`validateNoteContent`, `validateAnalysis`) all come from core. esbuild inlines the core package into `main.js` — no external dependency at runtime.
 
-**When modifying core**: Run `npm run build:core` (or `npm run build` which does it automatically). The plugin's `node_modules/@igggy/core` is a symlink to `../igggy/packages/core`.
+**When modifying core**: Run `npm run build:core` (or `npm run build` which does it automatically). The plugin's `node_modules/@igggy/core` is a symlink to `../igggy-web/packages/core`.
 
 ### AI Summarization (Two-Pass Pipeline)
 
@@ -84,11 +84,11 @@ Do not rename the AI-facing field names in the core prompt — it would break pa
 
 ## Cross-Platform Parity
 
-Igggy ships on two platforms: the web app (`../igggy`) and this Obsidian plugin.
+Igggy ships on two platforms: the web app (`../igggy-web`) and this Obsidian plugin.
 
 **When planning any feature or change:**
-1. Read the web app's `../igggy/docs/PARITY-MANIFEST.md` for the shared contract surface and current feature parity state
-2. Read `../igggy/docs/PLUGIN-INTEGRATION.md` for the living integration checklist
+1. Read the web app's `../igggy-web/docs/PARITY-MANIFEST.md` for the shared contract surface and current feature parity state
+2. Read `../igggy-web/docs/PLUGIN-INTEGRATION.md` for the living integration checklist
 3. Identify if the change affects shared contracts (see list below)
 4. If it does: include a **"Cross-Platform Implications"** section in the plan that specs what the web app needs. Ask the user how they want to handle the web side.
 5. If it's a plugin-only feature (vault-specific, Obsidian UI), note that explicitly so the user can confirm.
@@ -97,7 +97,7 @@ Igggy ships on two platforms: the web app (`../igggy`) and this Obsidian plugin.
 - If you modify prompt logic, types, or validation: flag it. These must stay in sync with `@igggy/core`.
 - If you add a new setting or preference: flag it. The web app may need a matching setting.
 - If you change frontmatter schema: flag it. The web app's folder sync depends on this.
-- After completing any feature work, update `../igggy/docs/PARITY-MANIFEST.md` and `../igggy/docs/PLUGIN-INTEGRATION.md` if parity state changed.
+- After completing any feature work, update `../igggy-web/docs/PARITY-MANIFEST.md` and `../igggy-web/docs/PLUGIN-INTEGRATION.md` if parity state changed.
 
 **Shared contracts to watch:**
 - `@igggy/core` — consumed via `file:` reference; types, prompts, validation
@@ -110,6 +110,25 @@ Igggy ships on two platforms: the web app (`../igggy`) and this Obsidian plugin.
 - What the web app needs to match (or why it doesn't apply)
 - Spec for the web app implementation if applicable
 - Ask the user: "How do you want to handle the web app side?"
+
+## Behavioral Contracts
+
+Structured documentation of product invariants and behavioral rules. Lives in `../igggy-web/docs/contracts/` (private repo — contracts cover both platforms).
+
+| Contract | Covers |
+|----------|--------|
+| `../igggy-web/docs/contracts/ai-pipeline.md` | Two-pass pipeline ordering, signal semantics, InsufficientContentError retry, model selection |
+| `../igggy-web/docs/contracts/core-types.md` | NoteContent, TranscriptAnalysis, NoteType, SpeakersData — shapes, normalization |
+| `../igggy-web/docs/contracts/frontmatter.md` | YAML frontmatter schema, metadata callout format, section layout by note type |
+| `../igggy-web/docs/contracts/api-endpoints.md` | Request/response contracts for endpoints this plugin consumes |
+| `../igggy-web/docs/contracts/settings-parity.md` | Settings that must exist on both platforms, defaults, known gaps |
+
+**Pre-ship checklist — before merging any change:**
+1. Identify which contracts are touched by the changed files
+2. Read those contracts and check all invariants still hold
+3. Check When/Then rules for conflicts with the new behavior
+4. If `@igggy/core` changed: run `npm test` in both `igggy-web/` and `igggy-obsidian/`
+5. If behavior intentionally changed: update the affected contract docs
 
 ## Docs (`/docs`)
 

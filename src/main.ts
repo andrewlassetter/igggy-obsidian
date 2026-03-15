@@ -8,12 +8,7 @@ import {
   runProcessingPipeline,
 } from './commands'
 import { RecordingSession } from './recording/session'
-import { renderWaveform } from './ui/waveform'
-import {
-  createRecordingPlaceholder,
-  setRecordingState,
-  transitionToProcessing,
-} from './notes/writer'
+import { createRecordingPlaceholder } from './notes/writer'
 import { RECORDING_VIEW_TYPE, RecordingView } from './ui/recording-view'
 
 export default class IgggyPlugin extends Plugin {
@@ -38,15 +33,6 @@ export default class IgggyPlugin extends Plugin {
     this.addRibbonIcon('audio-waveform', 'Open Igggy recording panel', () =>
       void this.activateRecordingView()
     )
-
-    // ── Waveform code block processor ────────────────────────────────────────────
-    // Renders an animated waveform inside `igggy-status` code blocks.
-    // Obsidian calls this processor whenever the block's content changes,
-    // so pause/resume state transitions happen automatically via vault.modify().
-    this.registerMarkdownCodeBlockProcessor('igggy-status', (source, el, ctx) => {
-      const state = source.trim() as 'recording' | 'paused' | 'processing'
-      renderWaveform(state, el, ctx, this)
-    })
 
     // ── Status bar (hidden until recording starts) ────────────────────────────────
     this.statusBarEl = this.addStatusBarItem()
@@ -109,7 +95,24 @@ export default class IgggyPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData())
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw: any = await this.loadData()
+
+    // Migrate legacy plan names (pre-1.1)
+    if (raw) {
+      if (raw.mode === 'byok') raw.mode = 'open'
+      if (raw.mode === 'hosted') raw.mode = 'starter'
+      if ('hostedAccessToken' in raw) {
+        raw.accessToken = raw.hostedAccessToken
+        raw.refreshToken = raw.hostedRefreshToken
+        raw.tokenExpiry = raw.hostedTokenExpiry
+        delete raw.hostedAccessToken
+        delete raw.hostedRefreshToken
+        delete raw.hostedTokenExpiry
+      }
+    }
+
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, raw)
   }
 
   async saveSettings(): Promise<void> {
@@ -177,14 +180,12 @@ export default class IgggyPlugin extends Plugin {
 
     if (state === 'recording') {
       this.activeRecording.pause()
-      void setRecordingState(this.app, this.recordingPlaceholder, 'paused')
       // Show frozen time with pause icon; stop updating while paused
       const elapsed = this.activeRecording.getElapsedSec()
       this.statusBarEl?.setText(`\u23F8 ${formatElapsed(elapsed)}`)
       this.clearStatusBarInterval()
     } else if (state === 'paused') {
       this.activeRecording.resume()
-      void setRecordingState(this.app, this.recordingPlaceholder, 'recording')
       // Resume live timer
       this.statusBarEl?.setText(`\uD83C\uDF99\uFE0F ${formatElapsed(this.activeRecording.getElapsedSec())}`)
       this.statusBarInterval = setInterval(() => {
@@ -208,9 +209,6 @@ export default class IgggyPlugin extends Plugin {
     // Stop recording and release the microphone
     const blob = await session.stop()
 
-    // Replace the igggy-status waveform block with the standard processing format
-    await transitionToProcessing(this.app, file)
-
     const buffer = await blob.arrayBuffer()
     const ext = RecordingSession.getExtension(blob.type)
     const filename = `igggy-recording-${Date.now()}.${ext}`
@@ -231,6 +229,11 @@ export default class IgggyPlugin extends Plugin {
   }
 
   // ── Status bar helpers ────────────────────────────────────────────────────────
+
+  /** Update the status bar with a processing stage message. Pass empty string to clear. */
+  setStatusText(text: string): void {
+    this.statusBarEl?.setText(text)
+  }
 
   private clearStatusBarInterval(): void {
     if (this.statusBarInterval !== null) {

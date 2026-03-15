@@ -12,6 +12,7 @@ export interface WriteNoteOptions {
   embedAudio: boolean
   showTasks: boolean
   analysisJson?: string
+  speakersJson?: string
 }
 
 export interface FinalizeOptions {
@@ -22,6 +23,7 @@ export interface FinalizeOptions {
   embedAudio: boolean
   showTasks: boolean
   analysisJson?: string
+  speakersJson?: string
 }
 
 export async function writeNote(
@@ -29,7 +31,7 @@ export async function writeNote(
   noteContent: NoteContent,
   options: WriteNoteOptions
 ): Promise<TFile> {
-  const { outputFolder, date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = options
+  const { outputFolder, date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson, speakersJson } = options
 
   const filename = formatNoteFilename(noteContent.title, date)
   const folderPath = normalizePath(outputFolder)
@@ -51,6 +53,7 @@ export async function writeNote(
     embedAudio,
     showTasks,
     analysisJson,
+    speakersJson,
   }
   const markdown = generateMarkdown(templateData)
 
@@ -107,11 +110,7 @@ export async function createPlaceholder(
     'source: igggy',
     '---',
     '',
-    '## Processing audio\u2026',
-    '',
-    '> Igggy is working on this note. This will update automatically.',
-    '',
-    '- \uD83D\uDCC2 Reading audio\u2026',
+    '> Igggy is processing this note. It will update automatically when complete.',
     '',
   ].join('\n')
 
@@ -119,29 +118,42 @@ export async function createPlaceholder(
 }
 
 /**
- * Updates the placeholder note body with the current pipeline stage.
- * Preserves the frontmatter and replaces the body.
+ * Creates a placeholder note for pasted text (no audio file).
+ * Similar to createPlaceholder but uses a generic title.
  */
-export async function updatePlaceholderStage(
+export async function createTextPlaceholder(
   app: App,
-  file: TFile,
-  stageLines: string[]
-): Promise<void> {
-  const currentContent = await app.vault.read(file)
-  const frontmatterMatch = currentContent.match(/^---\n[\s\S]*?\n---/)
-  const frontmatter = frontmatterMatch ? frontmatterMatch[0] : ''
+  outputFolder: string
+): Promise<TFile> {
+  const igggyId = crypto.randomUUID()
+  const date = new Date().toISOString().slice(0, 10)
 
-  const body = [
+  const folderPath = normalizePath(outputFolder)
+  const folder = app.vault.getAbstractFileByPath(folderPath)
+  if (!folder) {
+    await app.vault.createFolder(folderPath)
+  }
+
+  let filePath = normalizePath(`${folderPath}/${date} - Pasted text.md`)
+  let counter = 2
+  while (app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
+    filePath = normalizePath(`${folderPath}/${date} - Pasted text ${counter}.md`)
+    counter++
+  }
+
+  const placeholderMarkdown = [
+    '---',
+    `igggy_id: ${igggyId}`,
+    'title: "Processing\u2026"',
+    `date: ${date}`,
+    'source: igggy',
+    '---',
     '',
-    '## Processing audio\u2026',
-    '',
-    '> Igggy is working on this note. This will update automatically.',
-    '',
-    stageLines.map((line) => `- ${line}`).join('\n'),
+    '> Igggy is processing this note. It will update automatically when complete.',
     '',
   ].join('\n')
 
-  await app.vault.modify(file, frontmatter + body)
+  return app.vault.create(filePath, placeholderMarkdown)
 }
 
 /**
@@ -213,55 +225,11 @@ export async function createRecordingPlaceholder(
     'source: igggy',
     '---',
     '',
-    '```igggy-status',
-    'recording',
-    '```',
+    '> Igggy is recording. This note will update automatically when complete.',
     '',
   ].join('\n')
 
   return app.vault.create(filePath, markdown)
-}
-
-/**
- * Replaces the state string inside the igggy-status code block.
- * Obsidian re-renders the block after the file is modified, triggering
- * the code block processor with the new state.
- */
-export async function setRecordingState(
-  app: App,
-  file: TFile,
-  state: 'recording' | 'paused' | 'processing'
-): Promise<void> {
-  const content = await app.vault.read(file)
-  const updated = content.replace(
-    /```igggy-status\n\w+\n```/,
-    `\`\`\`igggy-status\n${state}\n\`\`\``
-  )
-  await app.vault.modify(file, updated)
-}
-
-/**
- * Transitions from recording placeholder → standard processing placeholder.
- * Removes the igggy-status block and writes the initial processing stage lines.
- * After this, all existing updatePlaceholderStage() calls work unchanged.
- */
-export async function transitionToProcessing(app: App, file: TFile): Promise<void> {
-  const currentContent = await app.vault.read(file)
-  const frontmatterMatch = currentContent.match(/^---\n[\s\S]*?\n---/)
-  const frontmatter = frontmatterMatch ? frontmatterMatch[0] : ''
-
-  const body = [
-    '',
-    '## Processing audio\u2026',
-    '',
-    '> Igggy is working on this note. This will update automatically.',
-    '',
-    '- \uD83C\uDF99\uFE0F Recording ready \u2713',
-    '- \uD83D\uDCC2 Reading audio\u2026',
-    '',
-  ].join('\n')
-
-  await app.vault.modify(file, frontmatter + body)
 }
 
 /**
@@ -275,7 +243,7 @@ export async function finalizePlaceholder(
   noteContent: NoteContent,
   options: FinalizeOptions
 ): Promise<string> {
-  const { date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson } = options
+  const { date, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson, speakersJson } = options
 
   // Reuse the igggy_id generated during createPlaceholder
   const currentContent = await app.vault.read(file)
@@ -292,6 +260,7 @@ export async function finalizePlaceholder(
     embedAudio,
     showTasks,
     analysisJson,
+    speakersJson,
   }
   const finalMarkdown = generateMarkdown(templateData)
 

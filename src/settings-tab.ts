@@ -21,26 +21,27 @@ export class IgggySettingsTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('Mode')
-      .setDesc('BYOK: Use your own API keys. Igggy Pro: Managed keys (requires account).')
+      .setDesc('Igggy Open: Use your own API keys. Starter/Pro: Managed keys (requires account).')
       .addDropdown((dd) => {
         dd
-          .addOption('byok', 'BYOK — bring your own keys')
-          .addOption('hosted', 'Igggy Pro — coming soon')
-          .setValue('byok')
+          .addOption('open', 'Igggy Open — bring your own keys')
+          .addOption('starter', 'Igggy Starter — coming soon')
+          .addOption('pro', 'Igggy Pro — coming soon')
+          .setValue('open')
           .onChange(async (value) => {
-            if (value === 'hosted') {
-              // Pro not available yet — revert to BYOK
-              dd.setValue('byok')
+            if (value === 'starter' || value === 'pro') {
+              // Paid tiers not available in plugin yet — revert to Open
+              dd.setValue('open')
               return
             }
-            this.plugin.settings.mode = value as 'byok' | 'hosted'
+            this.plugin.settings.mode = value as 'open' | 'starter' | 'pro'
             await this.plugin.saveSettings()
             this.display()
           })
       })
 
-    // Force BYOK until hosted mode is launched
-    this.renderBYOKSection(containerEl)
+    // Force Open until paid modes are launched in plugin
+    this.renderOpenSection(containerEl)
 
     // ── Note summarization (always visible) ─────────────────────────
     new Setting(containerEl).setName('Note summarization').setHeading()
@@ -85,7 +86,9 @@ export class IgggySettingsTab extends PluginSettingTab {
           .setPlaceholder('Igggy')
           .setValue(this.plugin.settings.outputFolder)
           .onChange(async (value) => {
-            this.plugin.settings.outputFolder = value.trim() || 'Igggy'
+            // Sanitize: strip leading slashes and path traversal
+            const sanitized = value.trim().replace(/^\/+/, '').replace(/\.\.\//g, '').replace(/\.\.$/, '')
+            this.plugin.settings.outputFolder = sanitized || 'Igggy'
             await this.plugin.saveSettings()
           })
       )
@@ -124,7 +127,7 @@ export class IgggySettingsTab extends PluginSettingTab {
         })
       )
 
-    const isHosted = this.plugin.settings.mode === 'hosted' && !!this.plugin.settings.hostedAccessToken
+    const isPaidTier = ['starter', 'pro'].includes(this.plugin.settings.mode) && !!this.plugin.settings.accessToken
 
     const lastSyncText = this.plugin.settings.lastSyncedAt
       ? `Last synced ${new Date(this.plugin.settings.lastSyncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`
@@ -133,15 +136,15 @@ export class IgggySettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Sync Now')
       .setDesc(
-        isHosted
-          ? `${lastSyncText} · Scans your vault and pushes all Igggy notes to the cloud DB. Pro only, limit once per hour.`
-          : `${lastSyncText} · On-demand sync is available on Igggy Pro.`
+        isPaidTier
+          ? `${lastSyncText} · Scans your vault and pushes all Igggy notes to the cloud DB. Starter/Pro only, limit once per hour.`
+          : `${lastSyncText} · On-demand sync is available on Igggy Starter and Pro.`
       )
       .addButton((btn) => {
         btn.setButtonText('Sync Now')
-        if (!isHosted) {
+        if (!isPaidTier) {
           btn.setDisabled(true)
-          btn.buttonEl.title = 'On-demand sync is available on Igggy Pro'
+          btn.buttonEl.title = 'On-demand sync is available on Igggy Starter and Pro'
           btn.buttonEl.style.opacity = '0.4'
           btn.buttonEl.style.cursor = 'not-allowed'
         } else {
@@ -153,9 +156,9 @@ export class IgggySettingsTab extends PluginSettingTab {
       })
   }
 
-  private renderHostedSection(containerEl: HTMLElement): void {
+  private renderPaidSection(containerEl: HTMLElement): void {
     const { settings } = this.plugin
-    const isConnected = !!settings.hostedAccessToken && !!settings.hostedRefreshToken
+    const isConnected = !!settings.accessToken && !!settings.refreshToken
 
     // Show connection status
     new Setting(containerEl)
@@ -180,16 +183,16 @@ export class IgggySettingsTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('eyJ…')
-          .setValue(settings.hostedAccessToken ? '••••••••' : '')
+          .setValue(settings.accessToken ? '••••••••' : '')
           .onChange(async (value) => {
             if (!value || value === '••••••••') return
-            this.plugin.settings.hostedAccessToken = value.trim()
+            this.plugin.settings.accessToken = value.trim()
             // Decode expiry from JWT payload (exp is in seconds)
             try {
               const payload = JSON.parse(atob(value.split('.')[1]))
-              this.plugin.settings.hostedTokenExpiry = (payload.exp as number) * 1000
+              this.plugin.settings.tokenExpiry = (payload.exp as number) * 1000
             } catch {
-              this.plugin.settings.hostedTokenExpiry = 0
+              this.plugin.settings.tokenExpiry = 0
             }
             await this.plugin.saveSettings()
             this.display()
@@ -203,10 +206,10 @@ export class IgggySettingsTab extends PluginSettingTab {
       .addText((text) =>
         text
           .setPlaceholder('Paste refresh token')
-          .setValue(settings.hostedRefreshToken ? '••••••••' : '')
+          .setValue(settings.refreshToken ? '••••••••' : '')
           .onChange(async (value) => {
             if (!value || value === '••••••••') return
-            this.plugin.settings.hostedRefreshToken = value.trim()
+            this.plugin.settings.refreshToken = value.trim()
             await this.plugin.saveSettings()
           })
       )
@@ -215,16 +218,16 @@ export class IgggySettingsTab extends PluginSettingTab {
     if (isConnected) {
       new Setting(containerEl)
         .setName('Disconnect')
-        .setDesc('Remove stored tokens and return to BYOK mode.')
+        .setDesc('Remove stored tokens and return to Igggy Open.')
         .addButton((btn) =>
           btn
             .setButtonText('Disconnect')
             .setWarning()
             .onClick(async () => {
-              this.plugin.settings.hostedAccessToken = ''
-              this.plugin.settings.hostedRefreshToken = ''
-              this.plugin.settings.hostedTokenExpiry = 0
-              this.plugin.settings.mode = 'byok'
+              this.plugin.settings.accessToken = ''
+              this.plugin.settings.refreshToken = ''
+              this.plugin.settings.tokenExpiry = 0
+              this.plugin.settings.mode = 'open'
               await this.plugin.saveSettings()
               this.display()
             })
@@ -232,13 +235,13 @@ export class IgggySettingsTab extends PluginSettingTab {
     }
   }
 
-  private renderBYOKSection(containerEl: HTMLElement): void {
+  private renderOpenSection(containerEl: HTMLElement): void {
     // ── Transcription ──────────────────────────────────────────────
     new Setting(containerEl).setName('Transcription').setHeading()
 
     new Setting(containerEl)
       .setName('Provider')
-      .setDesc('OpenAI Whisper works with just an OpenAI key. Deepgram adds speaker diarization.')
+      .setDesc('OpenAI Whisper works with just an OpenAI key. Deepgram adds speaker detection — after processing, you can name speakers in the note.')
       .addDropdown((dd) =>
         dd
           .addOption('openai', 'OpenAI Whisper')

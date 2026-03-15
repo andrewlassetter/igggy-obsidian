@@ -1,10 +1,12 @@
 import { App, Modal, Setting, TFile } from 'obsidian'
+import type { NoteType } from '@igggy/core'
 import type IgggyPlugin from '../main'
 
 export interface RegenOptions {
   density: 'concise' | 'standard' | 'detailed'
   includeTasks: boolean
   customPrompt: string
+  forcedType?: NoteType
   action: 'replace' | 'save-new'
 }
 
@@ -12,6 +14,7 @@ export class RegenerateModal extends Modal {
   private density: RegenOptions['density']
   private includeTasks: boolean
   private customPrompt = ''
+  private forcedType: NoteType | undefined = undefined
 
   constructor(
     app: App,
@@ -30,6 +33,21 @@ export class RegenerateModal extends Modal {
     contentEl.addClass('igggy-regen-modal')
 
     contentEl.createEl('h2', { text: 'Regenerate note' })
+
+    // ── Note type override ─────────────────────────────────────────────────────
+    new Setting(contentEl)
+      .setName('Note type')
+      .setDesc('Override AI type detection, or leave on Auto.')
+      .addDropdown((dropdown) => {
+        dropdown.addOption('', 'Auto (let AI decide)')
+        dropdown.addOption('MEETING', 'Meeting')
+        dropdown.addOption('MEMO', 'Memo')
+        dropdown.addOption('LECTURE', 'Lecture')
+        dropdown.setValue('')
+        dropdown.onChange((value) => {
+          this.forcedType = value ? (value as NoteType) : undefined
+        })
+      })
 
     // ── Detail level (segmented control) ──────────────────────────────────────
     const densitySetting = new Setting(contentEl)
@@ -107,6 +125,7 @@ export class RegenerateModal extends Modal {
       density: this.density,
       includeTasks: this.includeTasks,
       customPrompt: this.customPrompt.trim(),
+      forcedType: this.forcedType,
       action,
     }
   }

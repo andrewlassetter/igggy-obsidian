@@ -1,8 +1,8 @@
 export interface IgggySettings {
   // Connection mode
-  mode: 'byok' | 'hosted'  // Default: 'byok'
+  mode: 'open' | 'starter' | 'pro'  // Default: 'open'
 
-  // ── BYOK — user provides their own API keys ─────────────────────────────────
+  // ── Open — user provides their own API keys ────────────────────────────────
 
   // Transcription
   transcriptionProvider: 'openai' | 'deepgram'
@@ -13,11 +13,11 @@ export interface IgggySettings {
   summarizationProvider: 'openai' | 'anthropic'
   anthropicKey: string
 
-  // ── Hosted — authenticated via Igggy web app ────────────────────────────────
+  // ── Starter / Pro — authenticated via Igggy web app ────────────────────────
 
-  hostedAccessToken: string   // Supabase access_token (JWT)
-  hostedRefreshToken: string  // Supabase refresh_token
-  hostedTokenExpiry: number   // Unix timestamp in ms when access_token expires
+  accessToken: string   // Supabase access_token (JWT)
+  refreshToken: string  // Supabase refresh_token
+  tokenExpiry: number   // Unix timestamp in ms when access_token expires
 
   // ── Recording ────────────────────────────────────────────────────────────────
 
@@ -42,15 +42,15 @@ export interface IgggySettings {
 }
 
 export const DEFAULT_SETTINGS: IgggySettings = {
-  mode: 'byok',
+  mode: 'open',
   transcriptionProvider: 'openai',
   summarizationProvider: 'openai',
   openaiKey: '',
   deepgramKey: '',
   anthropicKey: '',
-  hostedAccessToken: '',
-  hostedRefreshToken: '',
-  hostedTokenExpiry: 0,
+  accessToken: '',
+  refreshToken: '',
+  tokenExpiry: 0,
   includeSystemAudio: false,
   noteTone: 'professional',
   noteDensity: 'standard',

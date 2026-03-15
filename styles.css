@@ -78,6 +78,14 @@
   opacity: 0.8;
 }
 
+.igggy-waveform-status {
+  display: flex;
+  align-items: center;
+  font-size: 0.8em;
+  color: var(--text-muted);
+  padding: 8px 0;
+}
+
 /* ── Recording View (sidebar panel) ─────────────────────────────────────────
    Uses Obsidian CSS variables for theme compatibility (dark + light modes).
    ────────────────────────────────────────────────────────────────────────── */
@@ -157,6 +165,32 @@
   margin-right: 2px;
 }
 
+/* Button descriptions */
+.igggy-rv-btn-desc {
+  font-size: 0.75em;
+  color: var(--text-faint);
+  text-align: center;
+  margin: -10px 0 0 0;
+}
+
+/* "or" divider */
+.igggy-rv-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-faint);
+  font-size: 0.75em;
+  margin: -4px 0;
+}
+
+.igggy-rv-divider::before,
+.igggy-rv-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--background-modifier-border);
+}
+
 /* Side-by-side controls (Pause + Stop, Resume + Stop, Delete + Create note) */
 .igggy-rv-controls {
   display: flex;
@@ -170,6 +204,9 @@
 }
 
 /* ── Waveform area (recording view uses existing .igggy-* classes) ─────────── */
+
+.igggy-rv-waveform { width: 100%; }
+.igggy-rv-waveform .igggy-canvas { width: 100%; display: block; }
 
 .igggy-rv-waveform-footer {
   display: flex;
@@ -223,8 +260,14 @@
   box-sizing: border-box;
 }
 
+.igggy-rv-custom-prompt-label {
+  font-size: 0.78em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
 .igggy-rv-custom-prompt-input::placeholder {
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .igggy-rv-custom-prompt-input:focus {
@@ -273,6 +316,19 @@
 .igggy-rv-toggle-checkbox {
   cursor: pointer;
   margin: 0;
+}
+
+.igggy-rv-toggle-info {
+  display: inline-flex;
+  margin-left: 4px;
+  color: var(--text-faint);
+  cursor: help;
+  vertical-align: middle;
+}
+
+.igggy-rv-toggle-info .svg-icon {
+  width: 12px;
+  height: 12px;
 }
 
 .igggy-rv-source-hint {

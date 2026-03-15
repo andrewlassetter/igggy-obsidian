@@ -5,17 +5,31 @@ import { OpenAIWhisperProvider } from './audio/providers/openai'
 import { DeepgramProvider } from './audio/providers/deepgram'
 import { ClaudeProvider } from './ai/providers/claude'
 import { OpenAIGPT4oProvider } from './ai/providers/openai'
-import { normalizeNoteType } from '@igggy/core'
+import { normalizeNoteType, parseSpeakersJson, getSpeakerNames } from '@igggy/core'
 import type { TranscriptAnalysis } from '@igggy/core'
 import type { SummarizationProvider } from './ai/providers/types'
 import {
   createPlaceholder,
-  updatePlaceholderStage,
+  createTextPlaceholder,
   setPlaceholderError,
   finalizePlaceholder,
 } from './notes/writer'
 import { generateMarkdown, type NoteTemplateData } from './notes/template'
+import {
+  extractMetadataBlock,
+  parseAnalysis,
+  extractSpeakersJson,
+  parseDuration,
+  parseAudioPath,
+  extractTranscript,
+  extractFrontmatter,
+  parseIgggyId,
+  parseDate,
+} from './notes/parser'
 import { RegenerateModal, type RegenOptions } from './ui/regenerate-modal'
+import { SpeakerModal } from './ui/speaker-modal'
+import { EditTranscriptModal } from './ui/edit-transcript-modal'
+import { PasteTranscriptModal } from './ui/paste-transcript-modal'
 
 const AUDIO_EXTENSIONS = new Set(['m4a', 'mp3', 'wav', 'webm', 'ogg', 'flac', 'aac', 'mp4'])
 export const APP_URL = 'https://app.igggy.ai'
@@ -30,7 +44,7 @@ export const APP_URL = 'https://app.igggy.ai'
  *
  * Only fires when:
  *   - cloudBackupEnabled + folderSyncEnabled are both true in settings
- *   - A valid hosted access token is available
+ *   - A valid access token is available (Starter/Pro tier)
  */
 async function syncNoteToCloud(
   plugin: IgggyPlugin,
@@ -41,9 +55,9 @@ async function syncNoteToCloud(
   const { settings } = plugin
 
   if (!settings.cloudBackupEnabled || !settings.folderSyncEnabled) return
-  if (!settings.hostedAccessToken) return
+  if (!settings.accessToken) return
 
-  const token = await getHostedToken(plugin)
+  const token = await getAuthToken(plugin)
 
   const body = {
     igggy_id: igggyId,
@@ -84,15 +98,15 @@ async function syncNoteToCloud(
 /**
  * Checks that all API keys required by the current provider selections are present.
  * Returns a user-facing error string if a key is missing, or null if everything is valid.
- * In hosted mode, keys are not required — validates auth tokens instead.
+ * In Starter/Pro mode, keys are not required — validates auth tokens instead.
  */
 export function validateKeys(plugin: IgggyPlugin): string | null {
   const { settings } = plugin
 
-  // Hosted mode — no BYOK keys needed
-  if (settings.mode === 'hosted') {
-    if (!settings.hostedAccessToken || !settings.hostedRefreshToken) {
-      return 'Igggy: Sign in to Igggy Pro. Open plugin settings \u2192 Igggy Pro mode.'
+  // Starter/Pro mode — no Open keys needed
+  if (['starter', 'pro'].includes(settings.mode)) {
+    if (!settings.accessToken || !settings.refreshToken) {
+      return 'Igggy: Sign in to your Igggy account. Open plugin settings → Connection mode.'
     }
     return null
   }
@@ -119,9 +133,9 @@ export function validateKeys(plugin: IgggyPlugin): string | null {
 export function validateSummarizationKeys(plugin: IgggyPlugin): string | null {
   const { settings } = plugin
 
-  if (settings.mode === 'hosted') {
-    if (!settings.hostedAccessToken || !settings.hostedRefreshToken) {
-      return 'Igggy: Sign in to Igggy Pro. Open plugin settings \u2192 Igggy Pro mode.'
+  if (['starter', 'pro'].includes(settings.mode)) {
+    if (!settings.accessToken || !settings.refreshToken) {
+      return 'Igggy: Sign in to your Igggy account. Open plugin settings → Connection mode.'
     }
     return null
   }
@@ -143,10 +157,10 @@ function getSummarizationProvider(plugin: IgggyPlugin): SummarizationProvider {
     : new OpenAIGPT4oProvider(settings.openaiKey)
 }
 
-// ── Hosted: token refresh ─────────────────────────────────────────────────────
+// ── Auth: token refresh ───────────────────────────────────────────────────────
 
 /**
- * Returns a valid Bearer token for the hosted tier.
+ * Returns a valid Bearer token for Starter/Pro tiers.
  * If the current access token is near expiry, refreshes it automatically and
  * saves the new tokens to plugin settings.
  */
@@ -154,13 +168,13 @@ function getSummarizationProvider(plugin: IgggyPlugin): SummarizationProvider {
 const SUPABASE_URL = 'https://fgxhtrwvpzawbnnlphji.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZneGh0cnd2cHphd2JubmxwaGppIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0OTA0NTgsImV4cCI6MjA4ODA2NjQ1OH0.cH2Qp9UQmMeoBBA4EsndybNDBFaZSzsPzY4mJfQqaTI'
 
-export async function getHostedToken(plugin: IgggyPlugin): Promise<string> {
+export async function getAuthToken(plugin: IgggyPlugin): Promise<string> {
   const { settings } = plugin
 
   // Refresh if within 60 seconds of expiry
-  const nearExpiry = Date.now() > settings.hostedTokenExpiry - 60_000
+  const nearExpiry = Date.now() > settings.tokenExpiry - 60_000
 
-  if (nearExpiry && settings.hostedRefreshToken) {
+  if (nearExpiry && settings.refreshToken) {
     try {
       const res = await requestUrl({
         url: `${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`,
@@ -169,16 +183,16 @@ export async function getHostedToken(plugin: IgggyPlugin): Promise<string> {
           'Content-Type': 'application/json',
           apikey: SUPABASE_ANON_KEY,
         },
-        body: JSON.stringify({ refresh_token: settings.hostedRefreshToken }),
+        body: JSON.stringify({ refresh_token: settings.refreshToken }),
       })
 
       const body = res.json as { access_token?: string; refresh_token?: string; expires_at?: number }
 
       if (body.access_token) {
-        plugin.settings.hostedAccessToken = body.access_token
-        if (body.refresh_token) plugin.settings.hostedRefreshToken = body.refresh_token
+        plugin.settings.accessToken = body.access_token
+        if (body.refresh_token) plugin.settings.refreshToken = body.refresh_token
         // expires_at from Supabase is in seconds
-        if (body.expires_at) plugin.settings.hostedTokenExpiry = body.expires_at * 1000
+        if (body.expires_at) plugin.settings.tokenExpiry = body.expires_at * 1000
         await plugin.saveSettings()
         return body.access_token
       }
@@ -188,12 +202,12 @@ export async function getHostedToken(plugin: IgggyPlugin): Promise<string> {
     }
   }
 
-  return settings.hostedAccessToken
+  return settings.accessToken
 }
 
-// ── Hosted: API pipeline ──────────────────────────────────────────────────────
+// ── Managed: API pipeline ─────────────────────────────────────────────────────
 
-interface HostedNoteResult {
+interface ManagedNoteResult {
   id: string
   title: string
   createdAt: string
@@ -208,10 +222,10 @@ interface HostedNoteResult {
 }
 
 /**
- * Hosted processing pipeline: upload audio to Igggy web app → server handles
- * transcription + summarization → fetch note → write to vault.
+ * Managed processing pipeline (Starter/Pro): upload audio to Igggy web app →
+ * server handles transcription + summarization → fetch note → write to vault.
  */
-async function runHostedPipeline(
+async function runManagedPipeline(
   plugin: IgggyPlugin,
   placeholderFile: TFile,
   rawBuffer: ArrayBuffer,
@@ -224,14 +238,11 @@ async function runHostedPipeline(
   let step = 'preparing upload'
 
   try {
-    const token = await getHostedToken(plugin)
+    const token = await getAuthToken(plugin)
     const authHeader = { Authorization: `Bearer ${token}` }
 
     // ── Step 1: Get presigned upload URL ─────────────────────────────────────
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      '☁️ Uploading audio…',
-    ])
+    plugin.setStatusText('☁️ Uploading audio…')
     step = 'getting upload URL'
 
     const urlRes = await requestUrl({
@@ -258,11 +269,7 @@ async function runHostedPipeline(
 
     // ── Step 3: Trigger server-side transcription + summarization ─────────────
     step = 'processing note'
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      '☁️ Audio uploaded ✓',
-      '✨ Processing your note…',
-    ])
+    plugin.setStatusText('✨ Processing your note…')
 
     const uploadRes = await requestUrl({
       url: `${APP_URL}/api/upload`,
@@ -288,18 +295,22 @@ async function runHostedPipeline(
       headers: { ...authHeader },
     })
 
-    const { note } = noteRes.json as { note: HostedNoteResult }
+    const { note } = noteRes.json as { note: ManagedNoteResult }
 
     // ── Step 5: Convert and write to vault ────────────────────────────────────
     step = 'writing note'
-    await finalizePlaceholderFromHosted(plugin, placeholderFile, note, {
+    await finalizePlaceholderFromManaged(plugin, placeholderFile, note, {
       audioPath,
       embedAudio,
       showTasks: plugin.settings.showTasks,
     })
+
+    plugin.setStatusText('')
+    new Notice(`Note ready: ${note.title}`, 4000)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    console.error(`[Igggy] Hosted pipeline error during "${step}":`, err)
+    console.error(`[Igggy] Managed pipeline error during "${step}":`, err)
+    plugin.setStatusText('')
     await setPlaceholderError(app, placeholderFile, step, message)
   }
 }
@@ -308,10 +319,10 @@ async function runHostedPipeline(
  * Adapts the web app note format into the plugin's finalizePlaceholder call,
  * then pushes the note to the cloud DB to register the vault igggyId.
  */
-async function finalizePlaceholderFromHosted(
+async function finalizePlaceholderFromManaged(
   plugin: IgggyPlugin,
   placeholderFile: TFile,
-  note: HostedNoteResult,
+  note: ManagedNoteResult,
   opts: { audioPath?: string; embedAudio?: boolean; showTasks?: boolean }
 ): Promise<void> {
   const app = plugin.app
@@ -382,10 +393,7 @@ export async function runProcessingPipeline(
 
   try {
     // ── Pre-process ──────────────────────────────────────────────────────────
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      '\uD83D\uDD0A Pre-processing audio\u2026',
-    ])
+    plugin.setStatusText('\uD83D\uDD0A Pre-processing audio\u2026')
     const processed = await preprocessAudio(rawBuffer, filename)
     const audioLine = processed.wasCompressed
       ? `\uD83D\uDD0A Compressed: ${formatBytes(rawBuffer.byteLength)} \u2192 ${formatBytes(processed.buffer.byteLength)} \u2713`
@@ -393,29 +401,27 @@ export async function runProcessingPipeline(
 
     // ── Transcribe ───────────────────────────────────────────────────────────
     step = 'transcribing'
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      audioLine,
-      '\uD83C\uDF99\uFE0F Transcribing\u2026',
-    ])
+    plugin.setStatusText('\uD83C\uDF99\uFE0F Transcribing\u2026')
     const transcriptionProvider =
       settings.transcriptionProvider === 'deepgram'
         ? new DeepgramProvider(settings.deepgramKey)
         : new OpenAIWhisperProvider(settings.openaiKey)
 
-    const { transcript, durationSec } = await transcriptionProvider.transcribe(
+    const { transcript, durationSec, speakerCount } = await transcriptionProvider.transcribe(
       processed.buffer,
       processed.filename
     )
 
+    // Build speaker data for Deepgram multi-speaker recordings
+    let speakersJson: string | undefined
+    if (speakerCount && speakerCount > 1) {
+      const speakers = Array.from({ length: speakerCount }, (_, i) => ({ id: i, label: `Speaker ${i + 1}` }))
+      speakersJson = JSON.stringify({ count: speakerCount, speakers })
+    }
+
     // ── Analyze (Pass 1) ────────────────────────────────────────────────────
     step = 'analyzing transcript'
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      audioLine,
-      '\uD83C\uDF99\uFE0F Transcript ready \u2713',
-      '\uD83D\uDD0D Analyzing transcript\u2026',
-    ])
+    plugin.setStatusText('\uD83D\uDD0D Analyzing transcript\u2026')
     const summarizationProvider = getSummarizationProvider(plugin)
 
     const analysis = await summarizationProvider.analyze(transcript, { durationSec, capturedAt })
@@ -423,13 +429,7 @@ export async function runProcessingPipeline(
 
     // ── Summarize (Pass 2) ───────────────────────────────────────────────────
     step = 'generating note'
-    await updatePlaceholderStage(app, placeholderFile, [
-      firstStageLine,
-      audioLine,
-      '\uD83C\uDF99\uFE0F Transcript ready \u2713',
-      '\uD83D\uDD0D Analysis complete \u2713',
-      '\u2728 Generating note\u2026',
-    ])
+    plugin.setStatusText('\u2728 Generating note\u2026')
 
     const noteContent = await summarizationProvider.summarize(transcript, { durationSec, capturedAt }, {
       analysis,
@@ -447,13 +447,18 @@ export async function runProcessingPipeline(
       embedAudio,
       showTasks: settings.showTasks,
       analysisJson,
+      speakersJson,
     })
 
     // ── Push to cloud (non-blocking) ──────────────────────────────────────────
     void syncNoteToCloud(plugin, igggyId, noteContent, { transcript, durationSec, date, analysisJson })
+
+    plugin.setStatusText('')
+    new Notice(`Note ready: ${noteContent.title}`, 4000)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error(`[Igggy] Error during "${step}":`, err)
+    plugin.setStatusText('')
     await setPlaceholderError(app, placeholderFile, step, friendlyError(message, step))
   }
 }
@@ -491,8 +496,8 @@ async function processAudioFile(plugin: IgggyPlugin, file: TFile): Promise<void>
 
   const firstStageLine = '\uD83D\uDCC2 Reading audio \u2713'
 
-  if (settings.mode === 'hosted') {
-    await runHostedPipeline(
+  if (['starter', 'pro'].includes(settings.mode)) {
+    await runManagedPipeline(
       plugin,
       placeholderFile,
       rawBuffer,
@@ -562,64 +567,30 @@ async function regenerateNote(
 
   // ── 1. Parse existing note ──────────────────────────────────────────────────
   const content = await app.vault.read(file)
-  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/)
-  if (!frontmatterMatch) {
+  const fm = extractFrontmatter(content)
+  if (!fm) {
     new Notice('Igggy: Could not read note frontmatter.', 5000)
     return
   }
-  const fm = frontmatterMatch[1]
 
-  // Extract frontmatter fields
-  const igggyId = fm.match(/^igggy_id:\s*(.+)$/m)?.[1]?.trim() ?? crypto.randomUUID()
-  const date = fm.match(/^date:\s*(.+)$/m)?.[1]?.trim() ?? new Date().toISOString().slice(0, 10)
-  const durationStr = fm.match(/^duration_sec:\s*(\d+)$/m)?.[1]
-  const durationSec = durationStr ? parseInt(durationStr, 10) : undefined
-  const audioPath = fm.match(/^audio:\s*"?(.+?)"?\s*$/m)?.[1]?.trim()
+  const igggyId = parseIgggyId(fm) ?? crypto.randomUUID()
+  const date = parseDate(fm) ?? new Date().toISOString().slice(0, 10)
+  const metaBlock = extractMetadataBlock(content)
+  const durationSec = parseDuration(fm, metaBlock)
+  const audioPath = parseAudioPath(fm, metaBlock)
 
-  // Parse stored analysis (single-quoted YAML scalar — unescape '' → ')
-  let analysis: TranscriptAnalysis | undefined
-  const analysisMatch = fm.match(/^igggy_analysis:\s*'([\s\S]*?)'\s*$/m)
-  if (analysisMatch) {
-    try {
-      const raw = analysisMatch[1].replace(/''/g, "'")
-      analysis = JSON.parse(raw) as TranscriptAnalysis
-    } catch {
-      console.warn('[Igggy] Could not parse stored analysis — will run full pipeline')
-    }
+  let analysis: TranscriptAnalysis | undefined = parseAnalysis(fm, metaBlock)
+  if (!analysis) {
+    console.warn('[Igggy] Could not parse stored analysis — will run full pipeline')
   }
+
+  const speakersJson = extractSpeakersJson(metaBlock)
+  const speakersData = speakersJson ? parseSpeakersJson(speakersJson) : null
+  const speakerNames = getSpeakerNames(speakersData)
+  const hasSpeakerNames = Object.keys(speakerNames).length > 0
 
   // ── 2. Extract transcript ───────────────────────────────────────────────────
-  let transcript: string | undefined
-
-  // Try Obsidian callout pattern first (new plugin-generated notes)
-  const calloutMatch = content.match(/> \[!note\]-?\s*Transcript\s*\n((?:>.*\n?)*)/i)
-  if (calloutMatch) {
-    // Strip leading "> " from each line and rejoin
-    transcript = calloutMatch[1]
-      .split('\n')
-      .map(line => line.replace(/^>\s?/, ''))
-      .join('\n')
-      .trim()
-  }
-
-  // Try <details> pattern (older plugin-generated notes)
-  if (!transcript) {
-    const detailsMatch = content.match(
-      /## Transcript\s*\n+<details>\s*\n*<summary>Full transcript<\/summary>\s*\n+([\s\S]*?)\n*\s*<\/details>/
-    )
-    if (detailsMatch) {
-      transcript = detailsMatch[1].trim()
-    }
-  }
-
-  if (!transcript) {
-    // Fall back to bare transcript (web app synced notes)
-    const bareMatch = content.match(/## Transcript\s*\n+([\s\S]*?)(?=\n## |\n---\s*$|$)/)
-    if (bareMatch) {
-      transcript = bareMatch[1].trim()
-    }
-  }
-
+  const transcript = extractTranscript(content)
   if (!transcript) {
     new Notice('Igggy: This note has no transcript \u2014 cannot regenerate.', 5000)
     return
@@ -643,6 +614,8 @@ async function regenerateNote(
       includeTasks: options.includeTasks,
       customPrompt: options.customPrompt || undefined,
       preferences: { density: options.density, tone: plugin.settings.noteTone },
+      forcedType: options.forcedType,
+      ...(hasSpeakerNames ? { speakerNames } : {}),
     })
 
     // ── 4. Write result ─────────────────────────────────────────────────────
@@ -656,6 +629,7 @@ async function regenerateNote(
       embedAudio: !!audioPath && plugin.settings.embedAudio,
       showTasks: options.includeTasks,
       analysisJson,
+      speakersJson,
     }
     const markdown = generateMarkdown(templateData)
 
@@ -731,6 +705,68 @@ export function openAudioFilePicker(plugin: IgggyPlugin): void {
   new AudioFileSuggestModal(plugin).open()
 }
 
+/**
+ * Opens a native system file dialog (Finder on macOS) for selecting audio files.
+ * Used by the sidebar recording view. The selected file is copied into the vault
+ * output folder so it can be embedded in the note, then processed through the
+ * standard audio pipeline.
+ */
+export function openSystemAudioFilePicker(plugin: IgggyPlugin): void {
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.m4a,.mp3,.wav,.webm,.ogg,.flac,.aac,.mp4'
+  input.style.display = 'none'
+  document.body.appendChild(input)
+
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0]
+    input.remove()
+    if (!file) return
+
+    try {
+      const buffer = await file.arrayBuffer()
+      const { app, settings } = plugin
+
+      // Ensure output folder exists
+      const folder = settings.outputFolder || ''
+      if (folder) {
+        const existing = app.vault.getAbstractFileByPath(folder)
+        if (!existing) {
+          await app.vault.createFolder(folder)
+        }
+      }
+
+      // Copy audio into vault so the note can embed it
+      const safeName = file.name.replace(/[/\\:*?"<>|#^[\]]/g, '_')
+      const audioVaultPath = normalizePath(folder ? `${folder}/${safeName}` : safeName)
+
+      // Avoid overwriting — append timestamp if file exists
+      let finalAudioPath = audioVaultPath
+      if (app.vault.getAbstractFileByPath(audioVaultPath)) {
+        const ext = safeName.lastIndexOf('.')
+        const base = ext > 0 ? safeName.slice(0, ext) : safeName
+        const suffix = ext > 0 ? safeName.slice(ext) : ''
+        finalAudioPath = normalizePath(
+          folder ? `${folder}/${base}-${Date.now()}${suffix}` : `${base}-${Date.now()}${suffix}`
+        )
+      }
+
+      await app.vault.createBinary(finalAudioPath, buffer)
+      const vaultFile = app.vault.getAbstractFileByPath(finalAudioPath)
+      if (vaultFile instanceof TFile) {
+        await processAudioFile(plugin, vaultFile)
+      } else {
+        new Notice('Igggy: Failed to import audio file into vault.', 5000)
+      }
+    } catch (err) {
+      console.error('[Igggy] System file picker error:', err)
+      new Notice('Igggy: Failed to import audio file.', 5000)
+    }
+  })
+
+  input.click()
+}
+
 export function registerMenus(plugin: IgggyPlugin): void {
   // File explorer context menu — only shown for audio files
   plugin.registerEvent(
@@ -775,6 +811,37 @@ export function registerMenus(plugin: IgggyPlugin): void {
       )
     })
   )
+
+  // File explorer context menu — "Name speakers" on Igggy notes with speaker data
+  plugin.registerEvent(
+    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+      if (!(file instanceof TFile) || file.extension !== 'md') return
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return
+      // We'll check for speaker data when the command is invoked
+      menu.addItem((item) =>
+        item
+          .setTitle('Name speakers')
+          .setIcon('users')
+          .onClick(() => { void openSpeakerModal(plugin, file) })
+      )
+    })
+  )
+
+  // File explorer context menu — "Edit transcript" on Igggy notes
+  plugin.registerEvent(
+    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+      if (!(file instanceof TFile) || file.extension !== 'md') return
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return
+      menu.addItem((item) =>
+        item
+          .setTitle('Edit transcript')
+          .setIcon('pencil')
+          .onClick(() => { void openEditTranscriptModal(plugin, file) })
+      )
+    })
+  )
 }
 
 // ── Command Registration ──────────────────────────────────────────────────────
@@ -815,6 +882,149 @@ export function registerCommands(plugin: IgggyPlugin): void {
       return true
     },
   })
+
+  // Name speakers in an Igggy note
+  plugin.addCommand({
+    id: 'name-speakers',
+    name: 'Name speakers',
+    checkCallback: (checking: boolean) => {
+      const file = plugin.app.workspace.getActiveFile()
+      if (!file || file.extension !== 'md') return false
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return false
+      if (!checking) void openSpeakerModal(plugin, file)
+      return true
+    },
+  })
+
+  // Edit transcript of an Igggy note
+  plugin.addCommand({
+    id: 'edit-transcript',
+    name: 'Edit transcript',
+    checkCallback: (checking: boolean) => {
+      const file = plugin.app.workspace.getActiveFile()
+      if (!file || file.extension !== 'md') return false
+      const cache = plugin.app.metadataCache.getFileCache(file)
+      if (cache?.frontmatter?.source !== 'igggy') return false
+      if (!checking) void openEditTranscriptModal(plugin, file)
+      return true
+    },
+  })
+
+  // Paste transcript to generate a note
+  plugin.addCommand({
+    id: 'paste-transcript',
+    name: 'Paste transcript\u2026',
+    callback: () => {
+      const keyError = validateSummarizationKeys(plugin)
+      if (keyError) {
+        new Notice(keyError, 6000)
+        return
+      }
+      new PasteTranscriptModal(plugin.app, (transcript) => {
+        void processPastedTranscript(plugin, transcript)
+      }).open()
+    },
+  })
+}
+
+// ── Speaker Naming ───────────────────────────────────────────────────────────
+
+async function openSpeakerModal(plugin: IgggyPlugin, file: TFile): Promise<void> {
+  const content = await plugin.app.vault.read(file)
+  const metaBlock = extractMetadataBlock(content)
+  const speakersJson = extractSpeakersJson(metaBlock)
+
+  if (!speakersJson) {
+    new Notice('Igggy: No speaker data found in this note. Speaker detection requires Deepgram transcription.', 5000)
+    return
+  }
+
+  const speakersData = parseSpeakersJson(speakersJson)
+  if (!speakersData) {
+    new Notice('Igggy: Could not parse speaker data.', 5000)
+    return
+  }
+
+  new SpeakerModal(plugin.app, file, speakersData).open()
+}
+
+// ── Transcript Editing ───────────────────────────────────────────────────────
+
+async function openEditTranscriptModal(plugin: IgggyPlugin, file: TFile): Promise<void> {
+  const content = await plugin.app.vault.read(file)
+  const transcript = extractTranscript(content)
+
+  if (!transcript) {
+    new Notice('Igggy: No transcript found in this note.', 5000)
+    return
+  }
+
+  // Strip bold speaker labels back to raw [Speaker N]: format for editing
+  const rawTranscript = transcript.replace(
+    /\*\*(.+?):\*\*\s*/g,
+    (_, label: string) => `[${label}]: `
+  )
+
+  new EditTranscriptModal(plugin.app, file, rawTranscript).open()
+}
+
+// ── Paste Transcript Pipeline ────────────────────────────────────────────────
+
+async function processPastedTranscript(plugin: IgggyPlugin, transcript: string): Promise<void> {
+  const { app, settings } = plugin
+  const date = new Date().toISOString().slice(0, 10)
+
+  let placeholderFile: TFile
+  try {
+    placeholderFile = await createTextPlaceholder(app, settings.outputFolder)
+    await app.workspace.getLeaf(false).openFile(placeholderFile)
+  } catch (err) {
+    console.error('[Igggy] Failed to create text placeholder:', err)
+    new Notice('Failed to create note file — check your output folder setting.', 6000)
+    return
+  }
+
+  let step = 'analyzing transcript'
+
+  try {
+    // ── Analyze (Pass 1) ────────────────────────────────────────────────────
+    plugin.setStatusText('\uD83D\uDD0D Analyzing transcript\u2026')
+    const provider = getSummarizationProvider(plugin)
+
+    const analysis = await provider.analyze(transcript, {})
+    const analysisJson = JSON.stringify(analysis)
+
+    // ── Summarize (Pass 2) ───────────────────────────────────────────────────
+    step = 'generating note'
+    plugin.setStatusText('\u2728 Generating note\u2026')
+
+    const noteContent = await provider.summarize(transcript, {}, {
+      analysis,
+      preferences: { density: settings.noteDensity, tone: settings.noteTone },
+    })
+
+    // ── Finalize ─────────────────────────────────────────────────────────────
+    step = 'writing note'
+    const igggyId = await finalizePlaceholder(app, placeholderFile, noteContent, {
+      date,
+      transcript,
+      embedAudio: false,
+      showTasks: settings.showTasks,
+      analysisJson,
+    })
+
+    // ── Push to cloud (non-blocking) ──────────────────────────────────────────
+    void syncNoteToCloud(plugin, igggyId, noteContent, { transcript, date, analysisJson })
+
+    plugin.setStatusText('')
+    new Notice(`Note ready: ${noteContent.title}`, 4000)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[Igggy] Error during "${step}":`, err)
+    plugin.setStatusText('')
+    await setPlaceholderError(app, placeholderFile, step, friendlyError(message, step))
+  }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

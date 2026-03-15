@@ -67,6 +67,8 @@ export class ClaudeProvider implements SummarizationProvider {
       analysis: options?.analysis,
       includeTasks: options?.includeTasks,
       customPrompt: options?.customPrompt,
+      forcedType: options?.forcedType,
+      speakerNames: options?.speakerNames,
     })
 
     const response = await requestUrl({

@@ -61,7 +61,12 @@ export class DeepgramProvider implements TranscriptionProvider {
       })
       .join('\n\n')
 
-    return { transcript, durationSec, speakersDetected: isMultiSpeaker }
+    return {
+      transcript,
+      durationSec,
+      speakersDetected: isMultiSpeaker,
+      speakerCount: isMultiSpeaker ? speakerIds.size : undefined,
+    }
   }
 }
 

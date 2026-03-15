@@ -17,30 +17,27 @@
  *        → idle (on completion or discard)
  */
 
-import { ItemView, Notice, WorkspaceLeaf, setIcon } from 'obsidian'
+import { ItemView, Notice, WorkspaceLeaf, setIcon, setTooltip } from 'obsidian'
 import type { TFile } from 'obsidian'
 import type IgggyPlugin from '../main'
 import { RecordingSession, PickerCancelledError, type RecordingMode } from '../recording/session'
 import {
   validateKeys,
-  openAudioFilePicker,
+  openSystemAudioFilePicker,
   runProcessingPipeline,
 } from '../commands'
-import {
-  createRecordingPlaceholder,
-  setRecordingState,
-  transitionToProcessing,
-} from '../notes/writer'
+import { createRecordingPlaceholder } from '../notes/writer'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const RECORDING_VIEW_TYPE = 'igggy-recording'
 
-/** Create a button with an Obsidian icon + text label */
-function iconButton(parent: HTMLElement, icon: string, text: string, cls: string): HTMLButtonElement {
+/** Create a button with an Obsidian icon + text label + optional native tooltip */
+function iconButton(parent: HTMLElement, icon: string, text: string, cls: string, tooltip?: string): HTMLButtonElement {
   const btn = parent.createEl('button', { cls })
   setIcon(btn, icon)
   btn.appendText(` ${text}`)
+  if (tooltip) setTooltip(btn, tooltip)
   return btn
 }
 
@@ -168,22 +165,36 @@ export class RecordingView extends ItemView {
       })
     }
 
-    const btn = iconButton(body, 'mic', 'Start recording', 'igggy-rv-btn-primary')
+    const btn = iconButton(body, 'mic', 'Start recording', 'igggy-rv-btn-primary', 'Start recording')
     btn.disabled = !!keyError
     btn.addEventListener('click', () => { void this.handleStart() })
+    body.createEl('p', { text: 'Record audio from your microphone', cls: 'igggy-rv-btn-desc' })
 
     // ── System audio toggle ───────────────────────────────────────────────────
+
+    const canCaptureSystem = typeof navigator.mediaDevices?.getDisplayMedia === 'function'
 
     const toggleRow = body.createDiv({ cls: 'igggy-rv-toggle-row' })
     const checkbox = toggleRow.createEl('input', { cls: 'igggy-rv-toggle-checkbox' })
     checkbox.type = 'checkbox'
-    checkbox.checked = this.plugin.settings.includeSystemAudio
-    const toggleLabel = toggleRow.createEl('label', { text: 'Include system audio' })
-    toggleLabel.htmlFor = 'igggy-system-audio'
     checkbox.id = 'igggy-system-audio'
+    const toggleLabel = toggleRow.createEl('label', { text: 'Include speaker audio' })
+    toggleLabel.htmlFor = 'igggy-system-audio'
+    const infoIcon = toggleLabel.createEl('span', { cls: 'igggy-rv-toggle-info' })
+    setIcon(infoIcon, 'info')
+    setTooltip(infoIcon, 'Records audio playing through your speakers or headphones — meeting calls, videos, music, etc.')
+
+    if (canCaptureSystem) {
+      checkbox.checked = this.plugin.settings.includeSystemAudio
+    } else {
+      checkbox.checked = false
+      checkbox.disabled = true
+      toggleRow.style.opacity = '0.5'
+      setTooltip(toggleRow, 'Speaker audio capture is not available in Obsidian desktop. Use app.igggy.ai for this feature.')
+    }
 
     const hintEl = body.createEl('p', {
-      text: 'You\'ll be prompted to choose a window — Check "Share audio".',
+      text: 'Select a window or screen — make sure "Share audio" is checked.',
       cls: 'igggy-rv-source-hint',
     })
     hintEl.toggleClass('igggy-hidden', !checkbox.checked)
@@ -196,8 +207,12 @@ export class RecordingView extends ItemView {
 
     // Custom prompt — optional instructions for the AI (set before recording)
     const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
+    promptContainer.createEl('label', {
+      text: 'Custom instructions (optional)',
+      cls: 'igggy-rv-custom-prompt-label',
+    })
     const promptTextarea = promptContainer.createEl('textarea', {
-      placeholder: 'What do you want from this note? (optional)',
+      placeholder: 'What do you want from this note?',
       cls: 'igggy-rv-custom-prompt-input',
     })
     promptTextarea.rows = 2
@@ -206,8 +221,11 @@ export class RecordingView extends ItemView {
       this.customPrompt = promptTextarea.value
     })
 
-    iconButton(body, 'upload', 'From file…', 'igggy-rv-btn-secondary')
-      .addEventListener('click', () => { void openAudioFilePicker(this.plugin) })
+    body.createDiv({ cls: 'igggy-rv-divider' }).createEl('span', { text: 'or' })
+
+    iconButton(body, 'upload', 'From file…', 'igggy-rv-btn-secondary', 'Process an audio file')
+      .addEventListener('click', () => { openSystemAudioFilePicker(this.plugin) })
+    body.createEl('p', { text: 'Process an audio file into an AI note', cls: 'igggy-rv-btn-desc' })
   }
 
   // ── Recording ──────────────────────────────────────────────────────────────
@@ -222,9 +240,8 @@ export class RecordingView extends ItemView {
       : 'No audio detected — check your microphone'
     this.silenceWarningEl = body.createEl('p', {
       text: silenceMsg,
-      cls: 'igggy-rv-warning',
+      cls: 'igggy-rv-warning igggy-hidden',
     })
-    this.silenceWarningEl.toggleClass('igggy-hidden', true)
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer', text: '0:00' })
@@ -235,25 +252,27 @@ export class RecordingView extends ItemView {
 
     // Mute toggle — only shown when a mic stream is active ('mic' or 'both' modes)
     if (this.session?.hasMic()) {
-      const muteBtn = iconButton(controls, 'mic', 'Mute', 'igggy-rv-btn-secondary')
+      const muteBtn = iconButton(controls, 'mic', 'Mute', 'igggy-rv-btn-secondary', 'Mute microphone')
       muteBtn.addEventListener('click', () => {
         if (this.session?.isMuted()) {
           this.session.unmute()
           muteBtn.empty()
           setIcon(muteBtn, 'mic')
           muteBtn.appendText(' Mute')
+          setTooltip(muteBtn, 'Mute microphone')
         } else {
           this.session?.mute()
           muteBtn.empty()
           setIcon(muteBtn, 'mic-off')
           muteBtn.appendText(' Unmute')
+          setTooltip(muteBtn, 'Unmute microphone')
         }
       })
     }
 
-    iconButton(controls, 'pause', 'Pause', 'igggy-rv-btn-secondary')
+    iconButton(controls, 'pause', 'Pause', 'igggy-rv-btn-secondary', 'Pause recording')
       .addEventListener('click', () => this.handlePause())
-    iconButton(controls, 'square', 'Stop', 'igggy-rv-btn-primary')
+    iconButton(controls, 'square', 'Finish', 'igggy-rv-btn-primary', 'Finish recording')
       .addEventListener('click', () => { void this.handleStop() })
   }
 
@@ -263,7 +282,8 @@ export class RecordingView extends ItemView {
     // Flat bars reuse existing .igggy-waveform.paused styles from styles.css
     const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform igggy-waveform paused' })
     const barsDiv = waveformEl.createDiv({ cls: 'igggy-bars' })
-    for (let i = 0; i < BAR_COUNT; i++) barsDiv.createDiv({ cls: 'bar' })
+    const pausedBarCount = Math.floor((body.clientWidth || BAR_COUNT * 5) / 5)
+    for (let i = 0; i < pausedBarCount; i++) barsDiv.createDiv({ cls: 'bar' })
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer' })
@@ -273,9 +293,9 @@ export class RecordingView extends ItemView {
     this.startTimer(timerEl)
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
-    iconButton(controls, 'play', 'Resume', 'igggy-rv-btn-secondary')
+    iconButton(controls, 'play', 'Resume', 'igggy-rv-btn-secondary', 'Resume recording')
       .addEventListener('click', () => this.handleResume())
-    iconButton(controls, 'square', 'Stop', 'igggy-rv-btn-primary')
+    iconButton(controls, 'square', 'Finish', 'igggy-rv-btn-primary', 'Finish recording')
       .addEventListener('click', () => { void this.handleStop() })
   }
 
@@ -331,9 +351,10 @@ export class RecordingView extends ItemView {
     // Rolling sine-wave animation reuses .igggy-waveform.processing styles
     const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform igggy-waveform processing' })
     const barsDiv = waveformEl.createDiv({ cls: 'igggy-bars' })
-    for (let i = 0; i < BAR_COUNT; i++) {
+    const procBarCount = Math.floor((body.clientWidth || BAR_COUNT * 5) / 5)
+    for (let i = 0; i < procBarCount; i++) {
       const bar = barsDiv.createDiv({ cls: 'bar' })
-      const delay = -(i / (BAR_COUNT - 1)) * 1.4
+      const delay = -(i / Math.max(procBarCount - 1, 1)) * 1.4
       bar.style.setProperty('--wave-delay', `${delay.toFixed(3)}s`)
     }
 
@@ -342,9 +363,21 @@ export class RecordingView extends ItemView {
       cls: 'igggy-rv-hint',
     })
 
-    // Cancel button — allows aborting during processing
-    iconButton(body, 'x', 'Cancel', 'igggy-rv-btn-secondary')
-      .addEventListener('click', () => { void this.handleDiscardConfirmed() })
+    // Cancel button — shows confirmation before discarding
+    const cancelBtn = iconButton(body, 'trash-2', 'Cancel recording', 'igggy-rv-btn-secondary', 'Cancel recording')
+    cancelBtn.addEventListener('click', () => {
+      // Replace cancel button with confirmation choices
+      cancelBtn.remove()
+      const confirmMsg = body.createEl('p', {
+        text: 'Delete the recording and its note?',
+        cls: 'igggy-rv-hint',
+      })
+      const controls = body.createDiv({ cls: 'igggy-rv-controls' })
+      iconButton(controls, 'file-check', 'Keep note', 'igggy-rv-btn-secondary')
+        .addEventListener('click', () => { void this.handleCancelKeepNote() })
+      iconButton(controls, 'trash-2', 'Delete both', 'igggy-rv-btn-primary')
+        .addEventListener('click', () => { void this.handleDiscardConfirmed() })
+    })
   }
 
   // ── Error ──────────────────────────────────────────────────────────────────
@@ -362,14 +395,17 @@ export class RecordingView extends ItemView {
 
     // Fallback: show static bars if analyser is unavailable
     if (!analyser) {
+      const fallbackBarCount = Math.floor((container.clientWidth || BAR_COUNT * 5) / 5)
       const barsDiv = container.createDiv({ cls: 'igggy-bars' })
-      for (let i = 0; i < BAR_COUNT; i++) barsDiv.createDiv({ cls: 'bar' })
+      for (let i = 0; i < fallbackBarCount; i++) barsDiv.createDiv({ cls: 'bar' })
       return
     }
 
     const canvas = container.createEl('canvas', { cls: 'igggy-canvas' })
-    canvas.width = BAR_COUNT * 5   // 5px per bar slot (3px bar + 2px gap)
+    const canvasWidth = container.clientWidth || BAR_COUNT * 5
+    canvas.width = canvasWidth
     canvas.height = 36
+    const barCount = Math.floor(canvasWidth / 5)
 
     const ctx = canvas.getContext('2d')!
     const freqData = new Uint8Array(analyser.frequencyBinCount)
@@ -386,8 +422,8 @@ export class RecordingView extends ItemView {
       analyser.getByteFrequencyData(freqData)
       ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const binIndex = Math.floor((i / BAR_COUNT) * freqData.length)
+      for (let i = 0; i < barCount; i++) {
+        const binIndex = Math.floor((i / barCount) * freqData.length)
         const normalized = freqData[binIndex] / 255
         const height = Math.max(3, Math.sqrt(normalized) * 32)
         const x = i * 5
@@ -509,7 +545,6 @@ export class RecordingView extends ItemView {
   private handlePause(): void {
     if (!this.session || !this.placeholderFile) return
     this.session.pause()
-    void setRecordingState(this.plugin.app, this.placeholderFile, 'paused')
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
     this.silenceWarningEl = null  // cleared on transition; paused state has no warning
@@ -519,7 +554,6 @@ export class RecordingView extends ItemView {
   private handleResume(): void {
     if (!this.session || !this.placeholderFile) return
     this.session.resume()
-    void setRecordingState(this.plugin.app, this.placeholderFile, 'recording')
     this.transition('recording')
   }
 
@@ -532,7 +566,17 @@ export class RecordingView extends ItemView {
     this.finalElapsed = this.session.getElapsedSec()
     this.capturedAt = new Date()
 
-    this.blob = await this.session.stop()
+    try {
+      this.blob = await this.session.stop()
+    } catch (err) {
+      console.error('[Igggy] Failed to stop recording session:', err)
+      this.session = null
+      this.plugin.activeRecording = null
+      this.errorMsg = 'Recording failed to stop — please try again'
+      this.transition('error')
+      return
+    }
+
     this.session = null
     this.plugin.activeRecording = null
     // Keep plugin.recordingPlaceholder — handleProcess reads it via this.placeholderFile
@@ -545,9 +589,20 @@ export class RecordingView extends ItemView {
     if (!this.blob || !this.placeholderFile) return
 
     const file = this.placeholderFile
-    await transitionToProcessing(this.plugin.app, file)
 
-    const buffer = await this.blob.arrayBuffer()
+    let buffer: ArrayBuffer
+    try {
+      buffer = await this.blob.arrayBuffer()
+    } catch (err) {
+      console.error('[Igggy] Failed to prepare recording for processing:', err)
+      this.blob = null
+      this.placeholderFile = null
+      this.plugin.recordingPlaceholder = null
+      this.errorMsg = 'Failed to prepare recording — please try again'
+      this.transition('error')
+      return
+    }
+
     const ext = RecordingSession.getExtension(this.blob.type)
     const filename = `igggy-recording-${Date.now()}.${ext}`
     const date = new Date().toISOString().slice(0, 10)
@@ -599,6 +654,15 @@ export class RecordingView extends ItemView {
         // File may have already been removed — ignore
       }
     }
+    this.transition('idle')
+  }
+
+  private handleCancelKeepNote(): void {
+    // Cancel processing but keep the placeholder note in the vault
+    this.blob = null
+    this.placeholderFile = null
+    this.customPrompt = ''
+    this.plugin.recordingPlaceholder = null
     this.transition('idle')
   }
 

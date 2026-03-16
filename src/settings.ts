@@ -39,6 +39,8 @@ export interface IgggySettings {
   cloudBackupEnabled: boolean  // whether to push notes to Igggy cloud DB after each write
   folderSyncEnabled: boolean   // whether push-on-write sync is active (enables cloudBackupEnabled calls)
   lastSyncedAt: number | null  // Unix ms timestamp of last on-demand re-index (for display + rate-limit guard)
+  lastPulledAt: string | null  // ISO 8601 timestamp of last successful pull sync (used as ?since= cursor)
+  pendingSyncs: Array<{ igggyId: string; payload: Record<string, unknown> }> // queued push payloads after double failure
 }
 
 export const DEFAULT_SETTINGS: IgggySettings = {
@@ -60,4 +62,6 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   cloudBackupEnabled: false,
   folderSyncEnabled: false,
   lastSyncedAt: null,
+  lastPulledAt: null,
+  pendingSyncs: [],
 }

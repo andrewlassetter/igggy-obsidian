@@ -40,8 +40,9 @@ export const APP_URL = 'https://app.igggy.ai'
 /**
  * Non-blocking push of a completed note to the Igggy cloud DB via
  * POST /api/notes/sync. Fires after every successful vault write.
- * Failures are logged but never surface to the user — the vault file
- * is always the reliable output; the cloud DB is a backup.
+ *
+ * Retry behavior: on first failure, waits 5s and retries once.
+ * On second failure, queues the payload in pendingSyncs (drained on next pull cycle).
  *
  * Only fires when:
  *   - cloudBackupEnabled + folderSyncEnabled are both true in settings
@@ -60,7 +61,7 @@ async function syncNoteToCloud(
 
   const token = await getAuthToken(plugin)
 
-  const body = {
+  const body: Record<string, unknown> = {
     igggy_id: igggyId,
     title: noteContent.title,
     type: noteContent.noteType,
@@ -80,18 +81,38 @@ async function syncNoteToCloud(
     analysis_json: extras.analysisJson ? JSON.parse(extras.analysisJson) : null,
   }
 
-  // Fire-and-forget — don't await, don't throw
-  requestUrl({
-    url: `${APP_URL}/api/notes/sync`,
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(body),
-  }).catch((err) => {
-    console.warn('[Igggy] Cloud sync failed (non-blocking):', err)
-  })
+  const attempt = async (): Promise<boolean> => {
+    try {
+      const res = await requestUrl({
+        url: `${APP_URL}/api/notes/sync`,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        throw: false,
+      })
+      return res.status >= 200 && res.status < 300
+    } catch {
+      return false
+    }
+  }
+
+  // First attempt (non-blocking)
+  const ok = await attempt()
+  if (ok) return
+
+  // Retry after 5s
+  await new Promise((r) => setTimeout(r, 5000))
+  const retryOk = await attempt()
+  if (retryOk) return
+
+  // Queue for later drain
+  console.warn('[Igggy] Cloud sync failed after retry — queuing for later:', igggyId)
+  new Notice('Note saved locally. Cloud sync will retry.', 3000)
+  settings.pendingSyncs.push({ igggyId, payload: body })
+  await plugin.saveSettings()
 }
 
 // ── Key validation ────────────────────────────────────────────────────────────

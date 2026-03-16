@@ -1,6 +1,7 @@
-import { Notice, requestUrl } from 'obsidian'
+import { Notice, normalizePath, requestUrl } from 'obsidian'
 import type IgggyPlugin from '../main'
 import { getAuthToken, APP_URL } from '../commands'
+import { drainPendingSyncs, pullFromCloud } from './pull'
 
 const BATCH_SIZE = 50
 const BATCH_DELAY_MS = 200
@@ -80,8 +81,14 @@ function sleep(ms: number): Promise<void> {
  * Shows live progress via Obsidian Notice. Handles 429 gracefully.
  */
 export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
-  // Use the metadata cache to find Igggy notes without reading every file
+  // Pull from cloud first (downloads any web-created notes into vault)
+  await drainPendingSyncs(plugin)
+  await pullFromCloud(plugin)
+
+  // Use the metadata cache to find Igggy notes in the output folder
+  const outputFolder = normalizePath(plugin.settings.outputFolder)
   const igggyFiles = plugin.app.vault.getMarkdownFiles().filter((f) => {
+    if (!f.path.startsWith(outputFolder + '/') && f.path !== outputFolder) return false
     const cache = plugin.app.metadataCache.getFileCache(f)
     return !!cache?.frontmatter?.igggy_id
   })

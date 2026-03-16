@@ -10,6 +10,9 @@ import {
 import { RecordingSession } from './recording/session'
 import { createRecordingPlaceholder } from './notes/writer'
 import { RECORDING_VIEW_TYPE, RecordingView } from './ui/recording-view'
+import { pullFromCloud, drainPendingSyncs } from './sync/pull'
+
+const PULL_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
 
 export default class IgggyPlugin extends Plugin {
   settings!: IgggySettings
@@ -19,6 +22,7 @@ export default class IgggyPlugin extends Plugin {
   recordingPlaceholder: TFile | null = null
   private statusBarEl: HTMLElement | null = null
   private statusBarInterval: ReturnType<typeof setInterval> | null = null
+  private pullSyncInterval: ReturnType<typeof setInterval> | null = null
 
   async onload(): Promise<void> {
     await this.loadSettings()
@@ -69,6 +73,18 @@ export default class IgggyPlugin extends Plugin {
     })
 
     this.addSettingTab(new IgggySettingsTab(this.app, this))
+
+    // ── Pull sync (Starter/Pro with cloud backup) ──────────────────────────────
+    // Initial pull after a short delay to let the vault index settle
+    setTimeout(() => {
+      void drainPendingSyncs(this).then(() => pullFromCloud(this))
+    }, 3000)
+
+    // Periodic pull every 5 minutes
+    this.pullSyncInterval = setInterval(() => {
+      void drainPendingSyncs(this).then(() => pullFromCloud(this))
+    }, PULL_INTERVAL_MS)
+
     console.debug('[Igggy] Plugin loaded')
   }
 
@@ -77,6 +93,11 @@ export default class IgggyPlugin extends Plugin {
     if (this.activeRecording) {
       void this.activeRecording.stop()
       this.activeRecording = null
+    }
+    // Stop pull sync interval
+    if (this.pullSyncInterval !== null) {
+      clearInterval(this.pullSyncInterval)
+      this.pullSyncInterval = null
     }
     this.clearStatusBar()
     console.debug('[Igggy] Plugin unloaded')

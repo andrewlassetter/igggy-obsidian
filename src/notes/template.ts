@@ -12,11 +12,12 @@ export interface NoteTemplateData {
   showTasks: boolean     // feature flag — when false, Tasks section is omitted from output
   analysisJson?: string  // JSON-stringified TranscriptAnalysis from Pass 1 — stored for regen
   speakersJson?: string  // JSON-stringified SpeakersData — stored for speaker naming + regen
+  noteSource?: string    // which platform created this note: 'web', 'plugin', etc.
 }
 
 
 export function generateMarkdown(data: NoteTemplateData): string {
-  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson, speakersJson } = data
+  const { noteContent, date, igggyId, transcript, durationSec, audioPath, embedAudio, showTasks, analysisJson, speakersJson, noteSource } = data
   const { title, summary, content, keyTopics, decisions, actionItems } = noteContent
   // Normalize legacy types (ONE_ON_ONE → MEETING, JOURNAL → MEMO) for frontmatter + tags
   const noteType = normalizeNoteType(noteContent.noteType)
@@ -43,6 +44,7 @@ export function generateMarkdown(data: NoteTemplateData): string {
     `> type: ${noteType}`,
     durationSec != null ? `> duration_sec: ${durationSec}` : null,
     audioPath ? `> audio: "${audioPath}"` : null,
+    noteSource ? `> note_source: ${noteSource}` : null,
     speakersJson ? `> speakers: '${speakersJson.replace(/'/g, "''")}'` : null,
     analysisJson ? `> analysis: '${analysisJson.replace(/'/g, "''")}'` : null,
   ].filter(Boolean) as string[]

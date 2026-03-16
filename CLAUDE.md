@@ -63,6 +63,7 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `../igggy-web/docs/contracts/api-endpoints.md` | Request/response contracts for endpoints this plugin consumes |
 | `../igggy-web/docs/contracts/settings-parity.md` | Settings that must exist on both platforms, defaults, known gaps |
 | `../igggy-web/docs/contracts/search.md` | FTS vector update invariant, search query format, vector must be updated after all note mutations |
+| `../igggy-web/docs/contracts/sync.md` | Immutable note model, insert-only push, create-only pull, igggyId as sync key, note source tracking |
 
 ## Feature Flags
 
@@ -71,12 +72,15 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `TASKS_ENABLED` | `false` | Hides task UI (settings toggle, regen modal toggle). Tasks are still extracted and stored in note metadata. Flip to `true` when ready to launch. |
+| `TRANSCRIPT_EDITING` | `false` | Hides "Edit transcript" command and context menu item. Editing modal code stays but is unreachable. |
+| `SPEAKER_NAMING` | `false` | Hides "Name speakers" command and context menu item. Deepgram diarization still runs. |
 
 **Scope — which files trigger which contracts:**
 - `src/ai/providers/*.ts`, `src/commands.ts` (pipeline orchestration) → `ai-pipeline.md`
 - `src/notes/template.ts`, `src/notes/parser.ts` → `frontmatter.md`
 - `src/settings.ts`, `src/settings-tab.ts` → `settings-parity.md`
 - Files consuming `@igggy/core` types → `core-types.md`
+- `src/sync/*.ts` → `sync.md`
 - Other files → no contract check needed
 
 **Conflict guard — before implementing any change:**

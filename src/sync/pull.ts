@@ -170,6 +170,7 @@ async function createVaultFileFromCloud(plugin: IgggyPlugin, note: CloudNote): P
     showTasks: plugin.settings.showTasks,
     analysisJson: note.analysisJson ?? undefined,
     speakersJson: note.speakers ?? undefined,
+    noteSource: note.source ?? undefined,
   }
 
   const markdown = generateMarkdown(templateData)

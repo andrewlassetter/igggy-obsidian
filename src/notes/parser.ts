@@ -121,3 +121,10 @@ export function parseIgggyId(frontmatter: string): string | undefined {
 export function parseDate(frontmatter: string): string | undefined {
   return frontmatter.match(/^date:\s*(.+)$/m)?.[1]?.trim()
 }
+
+// ── Note source ─────────────────────────────────────────────────────────────
+
+/** Extracts note_source from metadata callout (e.g. 'web', 'plugin'). */
+export function parseSource(metaBlock: string): string | undefined {
+  return metaBlock.match(/^>\s*note_source:\s*(.+)$/m)?.[1]?.trim()
+}

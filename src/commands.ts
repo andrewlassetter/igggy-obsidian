@@ -653,6 +653,7 @@ async function regenerateNote(
       showTasks: options.includeTasks,
       analysisJson,
       speakersJson,
+      noteSource: 'plugin',
     }
     const markdown = generateMarkdown(templateData)
 

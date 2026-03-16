@@ -54,6 +54,7 @@ export async function writeNote(
     showTasks,
     analysisJson,
     speakersJson,
+    noteSource: 'plugin',
   }
   const markdown = generateMarkdown(templateData)
 
@@ -261,6 +262,7 @@ export async function finalizePlaceholder(
     showTasks,
     analysisJson,
     speakersJson,
+    noteSource: 'plugin',
   }
   const finalMarkdown = generateMarkdown(templateData)
 

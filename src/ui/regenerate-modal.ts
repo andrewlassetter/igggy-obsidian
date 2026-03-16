@@ -8,7 +8,6 @@ export interface RegenOptions {
   includeTasks: boolean
   customPrompt: string
   forcedType?: NoteType
-  action: 'replace' | 'save-new'
 }
 
 export class RegenerateModal extends Modal {
@@ -100,22 +99,16 @@ export class RegenerateModal extends Modal {
           })
       })
 
-    // ── Action buttons ────────────────────────────────────────────────────────
+    // ── Action button ─────────────────────────────────────────────────────────
     const actions = contentEl.createDiv({ cls: 'igggy-regen-actions' })
 
-    const replaceBtn = actions.createEl('button', {
-      text: 'Replace this note',
+    const regenBtn = actions.createEl('button', {
+      text: 'Regenerate',
       cls: 'mod-cta',
     })
-    replaceBtn.addEventListener('click', () => {
+    regenBtn.addEventListener('click', () => {
       this.close()
-      this.onSubmit(this.buildOptions('replace'))
-    })
-
-    const newBtn = actions.createEl('button', { text: 'Save as new note' })
-    newBtn.addEventListener('click', () => {
-      this.close()
-      this.onSubmit(this.buildOptions('save-new'))
+      this.onSubmit(this.buildOptions())
     })
   }
 
@@ -123,13 +116,12 @@ export class RegenerateModal extends Modal {
     this.contentEl.empty()
   }
 
-  private buildOptions(action: RegenOptions['action']): RegenOptions {
+  private buildOptions(): RegenOptions {
     return {
       density: this.density,
       includeTasks: this.includeTasks,
       customPrompt: this.customPrompt.trim(),
       forcedType: this.forcedType,
-      action,
     }
   }
 }

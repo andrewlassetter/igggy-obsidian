@@ -619,11 +619,12 @@ async function regenerateNote(
       ...(hasSpeakerNames ? { speakerNames } : {}),
     })
 
-    // ── 4. Write result ─────────────────────────────────────────────────────
+    // ── 4. Write result (always creates a new note) ──────────────────────
+    const newIgggyId = crypto.randomUUID()
     const templateData: NoteTemplateData = {
       noteContent,
       date,
-      igggyId: options.action === 'replace' ? igggyId : crypto.randomUUID(),
+      igggyId: newIgggyId,
       transcript,
       durationSec,
       audioPath,
@@ -634,53 +635,38 @@ async function regenerateNote(
     }
     const markdown = generateMarkdown(templateData)
 
-    if (options.action === 'replace') {
-      await app.vault.modify(file, markdown)
+    const safeTitle = noteContent.title
+      .replace(/[/\\:*?"<>|#^[\]]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 100)
 
-      // Rename if title changed
-      const safeTitle = noteContent.title
-        .replace(/[/\\:*?"<>|#^[\]]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100)
-
-      const folderPath = file.parent?.path ?? ''
-      const targetFilename = `${date} - ${safeTitle}.md`
-      const targetPath = normalizePath(
-        folderPath ? `${folderPath}/${targetFilename}` : targetFilename
-      )
-
-      if (file.path !== targetPath && !app.vault.getAbstractFileByPath(targetPath)) {
-        await app.vault.rename(file, targetPath)
-      }
-
-      new Notice('Note regenerated.', 3000)
-    } else {
-      // Save as new note
-      const safeTitle = noteContent.title
-        .replace(/[/\\:*?"<>|#^[\]]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim()
-        .slice(0, 100)
-
-      const folderPath = normalizePath(plugin.settings.outputFolder)
-      const folder = app.vault.getAbstractFileByPath(folderPath)
-      if (!folder) {
-        await app.vault.createFolder(folderPath)
-      }
-
-      let filePath = normalizePath(`${folderPath}/${date} - ${safeTitle}.md`)
-      let counter = 2
-      while (app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
-        filePath = normalizePath(`${folderPath}/${date} - ${safeTitle} ${counter}.md`)
-        counter++
-      }
-
-      const newFile = await app.vault.create(filePath, markdown)
-      await app.workspace.getLeaf(false).openFile(newFile)
-
-      new Notice('New note created.', 3000)
+    const folderPath = normalizePath(plugin.settings.outputFolder)
+    const folder = app.vault.getAbstractFileByPath(folderPath)
+    if (!folder) {
+      await app.vault.createFolder(folderPath)
     }
+
+    let filePath = normalizePath(`${folderPath}/${date} - ${safeTitle}.md`)
+    let counter = 2
+    while (app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
+      filePath = normalizePath(`${folderPath}/${date} - ${safeTitle} ${counter}.md`)
+      counter++
+    }
+
+    const newFile = await app.vault.create(filePath, markdown)
+    await app.workspace.getLeaf(false).openFile(newFile)
+
+    new Notice('New note created. Original note unchanged.', 4000)
+
+    // Push new note to cloud (was missing — regen notes never synced before)
+    syncNoteToCloud(plugin, newIgggyId, noteContent, {
+      transcript,
+      durationSec,
+      date,
+      analysisJson,
+      source: 'plugin',
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[Igggy] Regeneration error:', err)

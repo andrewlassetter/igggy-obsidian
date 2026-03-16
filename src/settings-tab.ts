@@ -26,23 +26,22 @@ export class IgggySettingsTab extends PluginSettingTab {
       .addDropdown((dd) => {
         dd
           .addOption('open', 'Igggy Open — bring your own keys')
-          .addOption('starter', 'Igggy Starter — coming soon')
-          .addOption('pro', 'Igggy Pro — coming soon')
-          .setValue('open')
+          .addOption('starter', 'Igggy Starter')
+          .addOption('pro', 'Igggy Pro')
+          .setValue(this.plugin.settings.mode)
           .onChange(async (value) => {
-            if (value === 'starter' || value === 'pro') {
-              // Paid tiers not available in plugin yet — revert to Open
-              dd.setValue('open')
-              return
-            }
             this.plugin.settings.mode = value as 'open' | 'starter' | 'pro'
             await this.plugin.saveSettings()
             this.display()
           })
       })
 
-    // Force Open until paid modes are launched in plugin
-    this.renderOpenSection(containerEl)
+    // Render mode-specific sections
+    if (['starter', 'pro'].includes(this.plugin.settings.mode)) {
+      this.renderPaidSection(containerEl)
+    } else {
+      this.renderOpenSection(containerEl)
+    }
 
     // ── Note summarization (always visible) ─────────────────────────
     new Setting(containerEl).setName('Note summarization').setHeading()

@@ -1,4 +1,5 @@
 import { Menu, Notice, SuggestModal, TFile, normalizePath, requestUrl } from 'obsidian'
+import { TRANSCRIPT_EDITING, SPEAKER_NAMING } from './feature-flags'
 import type IgggyPlugin from './main'
 import { preprocessAudio } from './audio/preprocessor'
 import { OpenAIWhisperProvider } from './audio/providers/openai'
@@ -813,35 +814,38 @@ export function registerMenus(plugin: IgggyPlugin): void {
   )
 
   // File explorer context menu — "Name speakers" on Igggy notes with speaker data
-  plugin.registerEvent(
-    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
-      if (!(file instanceof TFile) || file.extension !== 'md') return
-      const cache = plugin.app.metadataCache.getFileCache(file)
-      if (cache?.frontmatter?.source !== 'igggy') return
-      // We'll check for speaker data when the command is invoked
-      menu.addItem((item) =>
-        item
-          .setTitle('Name speakers')
-          .setIcon('users')
-          .onClick(() => { void openSpeakerModal(plugin, file) })
-      )
-    })
-  )
+  if (SPEAKER_NAMING) {
+    plugin.registerEvent(
+      plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+        if (!(file instanceof TFile) || file.extension !== 'md') return
+        const cache = plugin.app.metadataCache.getFileCache(file)
+        if (cache?.frontmatter?.source !== 'igggy') return
+        menu.addItem((item) =>
+          item
+            .setTitle('Name speakers')
+            .setIcon('users')
+            .onClick(() => { void openSpeakerModal(plugin, file) })
+        )
+      })
+    )
+  }
 
   // File explorer context menu — "Edit transcript" on Igggy notes
-  plugin.registerEvent(
-    plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
-      if (!(file instanceof TFile) || file.extension !== 'md') return
-      const cache = plugin.app.metadataCache.getFileCache(file)
-      if (cache?.frontmatter?.source !== 'igggy') return
-      menu.addItem((item) =>
-        item
-          .setTitle('Edit transcript')
-          .setIcon('pencil')
-          .onClick(() => { void openEditTranscriptModal(plugin, file) })
-      )
-    })
-  )
+  if (TRANSCRIPT_EDITING) {
+    plugin.registerEvent(
+      plugin.app.workspace.on('file-menu', (menu: Menu, file) => {
+        if (!(file instanceof TFile) || file.extension !== 'md') return
+        const cache = plugin.app.metadataCache.getFileCache(file)
+        if (cache?.frontmatter?.source !== 'igggy') return
+        menu.addItem((item) =>
+          item
+            .setTitle('Edit transcript')
+            .setIcon('pencil')
+            .onClick(() => { void openEditTranscriptModal(plugin, file) })
+        )
+      })
+    )
+  }
 }
 
 // ── Command Registration ──────────────────────────────────────────────────────
@@ -884,32 +888,36 @@ export function registerCommands(plugin: IgggyPlugin): void {
   })
 
   // Name speakers in an Igggy note
-  plugin.addCommand({
-    id: 'name-speakers',
-    name: 'Name speakers',
-    checkCallback: (checking: boolean) => {
-      const file = plugin.app.workspace.getActiveFile()
-      if (!file || file.extension !== 'md') return false
-      const cache = plugin.app.metadataCache.getFileCache(file)
-      if (cache?.frontmatter?.source !== 'igggy') return false
-      if (!checking) void openSpeakerModal(plugin, file)
-      return true
-    },
-  })
+  if (SPEAKER_NAMING) {
+    plugin.addCommand({
+      id: 'name-speakers',
+      name: 'Name speakers',
+      checkCallback: (checking: boolean) => {
+        const file = plugin.app.workspace.getActiveFile()
+        if (!file || file.extension !== 'md') return false
+        const cache = plugin.app.metadataCache.getFileCache(file)
+        if (cache?.frontmatter?.source !== 'igggy') return false
+        if (!checking) void openSpeakerModal(plugin, file)
+        return true
+      },
+    })
+  }
 
   // Edit transcript of an Igggy note
-  plugin.addCommand({
-    id: 'edit-transcript',
-    name: 'Edit transcript',
-    checkCallback: (checking: boolean) => {
-      const file = plugin.app.workspace.getActiveFile()
-      if (!file || file.extension !== 'md') return false
-      const cache = plugin.app.metadataCache.getFileCache(file)
-      if (cache?.frontmatter?.source !== 'igggy') return false
-      if (!checking) void openEditTranscriptModal(plugin, file)
-      return true
-    },
-  })
+  if (TRANSCRIPT_EDITING) {
+    plugin.addCommand({
+      id: 'edit-transcript',
+      name: 'Edit transcript',
+      checkCallback: (checking: boolean) => {
+        const file = plugin.app.workspace.getActiveFile()
+        if (!file || file.extension !== 'md') return false
+        const cache = plugin.app.metadataCache.getFileCache(file)
+        if (cache?.frontmatter?.source !== 'igggy') return false
+        if (!checking) void openEditTranscriptModal(plugin, file)
+        return true
+      },
+    })
+  }
 
   // Paste transcript to generate a note
   plugin.addCommand({

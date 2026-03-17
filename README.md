@@ -11,7 +11,6 @@ Igggy takes any audio file from your vault, transcribes it, and uses AI to gener
 - **Transcription** — OpenAI Whisper (default) or Deepgram Nova-3 with speaker diarization
 - **AI summarization** — GPT-4o Mini (default) or Claude Sonnet for higher-quality output
 - **Structured notes** — auto-classified as Meeting, Memo, or Lecture with YAML frontmatter
-- **Task checklists** — extracted `- [ ]` tasks with owner and context
 - **Audio compression** — files over 10 MB are automatically compressed before upload (Web Audio API + lamejs), so large recordings process quickly
 - **All 3 entry points** — ribbon icon, command palette, or right-click context menu on any audio file
 - **Desktop only** — runs entirely within Obsidian's desktop app (Electron); no mobile support

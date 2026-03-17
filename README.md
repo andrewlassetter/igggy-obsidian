@@ -2,7 +2,7 @@
 
 **Turn your audio recordings into structured notes — right inside Obsidian.**
 
-Igggy takes any audio file from your vault, transcribes it, and uses AI to generate a clean, structured note with a summary, key highlights, decisions, and action item checklists. Bring your own API keys — no accounts, no subscriptions required to get started.
+Igggy takes any audio file from your vault, transcribes it, and uses AI to generate a clean, structured note with a summary, key highlights, and decisions. Bring your own API keys — no accounts, no subscriptions required to get started.
 
 ---
 

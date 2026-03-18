@@ -2,7 +2,7 @@
  * Pure parsing functions for reading Igggy note metadata from vault markdown.
  * Extracted from commands.ts so they can be unit-tested without Obsidian APIs.
  */
-import type { TranscriptAnalysis } from '@igggy/core'
+import type { TranscriptAnalysis } from '@igggy/types'
 
 // ── Metadata callout ─────────────────────────────────────────────────────────
 
@@ -120,6 +120,13 @@ export function parseIgggyId(frontmatter: string): string | undefined {
 /** Extracts date from frontmatter. */
 export function parseDate(frontmatter: string): string | undefined {
   return frontmatter.match(/^date:\s*(.+)$/m)?.[1]?.trim()
+}
+
+// ── Note ID (server DB ID — used for regen via API) ──────────────────────────
+
+/** Extracts server note_id from metadata callout. */
+export function parseNoteId(metaBlock: string): string | undefined {
+  return metaBlock.match(/^>\s*note_id:\s*(.+)$/m)?.[1]?.trim()
 }
 
 // ── Note source ─────────────────────────────────────────────────────────────

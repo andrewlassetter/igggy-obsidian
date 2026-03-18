@@ -1,34 +1,18 @@
-import { Notice, TFile, normalizePath, requestUrl } from 'obsidian'
-import { normalizeNoteType } from '@igggy/core'
+import { Notice, TFile, normalizePath } from 'obsidian'
+import { normalizeNoteType, formatNoteFilename } from '@igggy/types'
+import type { PullSyncNote } from '@igggy/types'
 import type IgggyPlugin from '../main'
-import { getAuthToken, APP_URL } from '../commands'
-import { generateMarkdown, type NoteTemplateData } from '../notes/template'
-import { formatNoteFilename } from '@igggy/core'
+import { createClient, getAuthToken } from '../commands'
+import { generateMarkdownFromContent } from '../notes/template-legacy'
+import type { LegacyNoteTemplateData } from '../notes/template-legacy'
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-interface CloudNote {
-  id: string
-  igggyId: string | null
-  title: string
-  noteType: string
-  createdAt: string
-  aiSummary: string
-  rawTranscript: string
-  audioDurationSec: number | null
-  source: string | null
-  keyTopics: string | null
-  content: string | null
-  decisions: string | null
-  speakers: string | null
-  analysisJson: string | null
-  tasks: Array<{ content: string; owner: string | null; sourceSegment: string | null }>
-}
-
-interface PullResponse {
-  notes: CloudNote[]
-  serverTime: string
-  hasMore: boolean
+/** Parse a JSON string field from the DB, or pass through if already an array/object. */
+function parseJsonField<T>(value: unknown, fallback: T): T {
+  if (value == null) return fallback
+  if (typeof value !== 'string') return value as T
+  try { return JSON.parse(value) as T } catch { return fallback }
 }
 
 // ── igggyId index ────────────────────────────────────────────────────────────
@@ -42,7 +26,6 @@ export function buildIgggyIdIndex(plugin: IgggyPlugin): Set<string> {
   const outputFolder = normalizePath(plugin.settings.outputFolder)
 
   for (const file of plugin.app.vault.getMarkdownFiles()) {
-    // Only scan files in the output folder
     if (!file.path.startsWith(outputFolder + '/') && file.path !== outputFolder) continue
 
     const cache = plugin.app.metadataCache.getFileCache(file)
@@ -61,55 +44,34 @@ export function buildIgggyIdIndex(plugin: IgggyPlugin): Set<string> {
  * Pulls notes from the Igggy cloud that don't exist locally.
  * Creates vault files for new notes. Handles pagination.
  *
- * Only runs when:
- *   - mode is 'starter' or 'pro'
- *   - cloudBackupEnabled is true
+ * Only runs when mode is 'starter' or 'pro' and cloudBackupEnabled is true.
  */
 export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
   const { settings } = plugin
 
-  // Guard: only authenticated users with cloud backup
-  if (!['starter', 'pro'].includes(settings.mode)) return
-  if (!settings.cloudBackupEnabled) return
-  if (!settings.accessToken) return
+  if (!settings.cloudBackupEnabled) {
+    console.debug('[Igggy] Pull sync skipped: cloudBackupEnabled is false')
+    return
+  }
+  if (!settings.accessToken) {
+    console.debug('[Igggy] Pull sync skipped: no access token')
+    return
+  }
 
   try {
-    const token = await getAuthToken(plugin)
+    const client = createClient(plugin)
     const localIndex = buildIgggyIdIndex(plugin)
     let since = settings.lastPulledAt ?? new Date(0).toISOString()
     let totalCreated = 0
     let hasMore = true
 
     while (hasMore) {
-      const res = await requestUrl({
-        url: `${APP_URL}/api/notes/sync?since=${encodeURIComponent(since)}`,
-        method: 'GET',
-        headers: { Authorization: `Bearer ${token}` },
-        throw: false,
-      })
-
-      if (res.status === 403) {
-        // Not Pro — silently skip pull
-        return
-      }
-
-      if (res.status === 401) {
-        console.warn('[Igggy] Pull sync unauthorized — token may be expired')
-        return
-      }
-
-      if (res.status < 200 || res.status >= 300) {
-        console.warn('[Igggy] Pull sync unexpected status:', res.status)
-        return
-      }
-
-      const data = res.json as PullResponse
+      const data = await client.pullSync(since)
 
       for (const note of data.notes) {
         if (!note.igggyId) continue
         if (localIndex.has(note.igggyId)) continue
 
-        // Create vault file for this cloud note
         await createVaultFileFromCloud(plugin, note)
         localIndex.add(note.igggyId)
         totalCreated++
@@ -117,13 +79,11 @@ export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
 
       hasMore = data.hasMore
       if (hasMore && data.notes.length > 0) {
-        // Use the last note's createdAt as the next cursor
         since = data.notes[data.notes.length - 1].createdAt
       } else {
         hasMore = false
       }
 
-      // Save serverTime as the new cursor
       settings.lastPulledAt = data.serverTime
       await plugin.saveSettings()
     }
@@ -138,17 +98,15 @@ export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
 
 // ── Create vault file from cloud note ────────────────────────────────────────
 
-async function createVaultFileFromCloud(plugin: IgggyPlugin, note: CloudNote): Promise<void> {
+async function createVaultFileFromCloud(plugin: IgggyPlugin, note: PullSyncNote): Promise<void> {
   const noteType = normalizeNoteType(note.noteType)
   const date = new Date(note.createdAt).toISOString().slice(0, 10)
 
-  const keyTopics = note.keyTopics
-    ? JSON.parse(note.keyTopics) as Array<{ topic: string; bullets: string[] }>
-    : []
-  const content = note.content ? JSON.parse(note.content) as string[] : []
-  const decisions = note.decisions ? JSON.parse(note.decisions) as string[] : []
+  const keyTopics = parseJsonField(note.keyTopics, [])
+  const content = parseJsonField(note.content, [])
+  const decisions = parseJsonField(note.decisions, [])
 
-  const templateData: NoteTemplateData = {
+  const templateData: LegacyNoteTemplateData = {
     noteContent: {
       title: note.title,
       noteType,
@@ -163,19 +121,22 @@ async function createVaultFileFromCloud(plugin: IgggyPlugin, note: CloudNote): P
       })),
     },
     date,
-    igggyId: note.igggyId!,
+    igggyId: note.igggyId,
     transcript: note.rawTranscript,
     durationSec: note.audioDurationSec ?? undefined,
-    embedAudio: false, // No audio file in vault for cloud-pulled notes
+    embedAudio: false,
     showTasks: plugin.settings.showTasks,
-    analysisJson: note.analysisJson ?? undefined,
-    speakersJson: note.speakers ?? undefined,
+    analysisJson: note.analysisJson
+      ? (typeof note.analysisJson === 'string' ? note.analysisJson : JSON.stringify(note.analysisJson))
+      : undefined,
+    speakersJson: note.speakers
+      ? (typeof note.speakers === 'string' ? note.speakers : JSON.stringify(note.speakers))
+      : undefined,
     noteSource: note.source ?? undefined,
   }
 
-  const markdown = generateMarkdown(templateData)
+  const markdown = generateMarkdownFromContent(templateData)
 
-  // Write to output folder with collision handling
   const folderPath = normalizePath(plugin.settings.outputFolder)
   const folder = plugin.app.vault.getAbstractFileByPath(folderPath)
   if (!folder) {
@@ -185,7 +146,6 @@ async function createVaultFileFromCloud(plugin: IgggyPlugin, note: CloudNote): P
   const filename = formatNoteFilename(note.title, date)
   let filePath = normalizePath(`${folderPath}/${filename}`)
 
-  // Collision resolution
   let counter = 2
   while (plugin.app.vault.getAbstractFileByPath(filePath) instanceof TFile) {
     const base = filename.replace(/\.md$/, '')
@@ -207,28 +167,12 @@ export async function drainPendingSyncs(plugin: IgggyPlugin): Promise<void> {
   if (settings.pendingSyncs.length === 0) return
   if (!settings.accessToken) return
 
-  const token = await getAuthToken(plugin)
+  const client = createClient(plugin)
   const remaining: typeof settings.pendingSyncs = []
 
   for (const entry of settings.pendingSyncs) {
     try {
-      const res = await requestUrl({
-        url: `${APP_URL}/api/notes/sync`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(entry.payload),
-        throw: false,
-      })
-
-      if (res.status >= 200 && res.status < 300) {
-        // Success — drop from queue
-        continue
-      }
-      // Non-success — keep in queue
-      remaining.push(entry)
+      await client.pushSync(entry.payload as unknown as import('@igggy/types').SyncPayload)
     } catch {
       remaining.push(entry)
     }

@@ -4,9 +4,10 @@
   "description": "Igggy — AI structured meeting notes in your Obsidian vault",
   "main": "main.js",
   "scripts": {
-    "build:core": "cd ../igggy-web/packages/core && npm run build",
-    "dev": "npm run build:core && node esbuild.config.mjs",
-    "build": "npm run build:core && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "build:types": "cd ../igggy-web/packages/types && npm run build",
+    "dev": "npm run build:types && node esbuild.config.mjs",
+    "build": "npm run build:types && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && npm run check:no-core",
+    "check:no-core": "node -e \"const fs=require('fs');const pkg=JSON.parse(fs.readFileSync('package.json','utf8'));if(pkg.dependencies?.['@igggy/core']||pkg.devDependencies?.['@igggy/core']){console.error('FAIL: @igggy/core found in package.json');process.exit(1)}const js=fs.readFileSync('main.js','utf8');const checks=['You are a transcript analyst','buildSummarizationPrompt','buildAnalysisPrompt'];for(const s of checks){if(js.includes(s)){console.error('FAIL: Prompt IP found in main.js: '+s);process.exit(1)}}console.log('check:no-core passed — no IP leakage detected')\"",
     "lint": "eslint src --ext .ts",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -32,6 +33,6 @@
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
-    "@igggy/core": "file:../igggy-web/packages/core"
+    "@igggy/types": "file:../igggy-web/packages/types"
   }
 }

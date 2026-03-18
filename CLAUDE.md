@@ -5,9 +5,8 @@
 ## Commands
 
 ```bash
-npm run dev       # builds @igggy/core, then esbuild in watch mode — auto-rebuilds to main.js on save
-npm run build     # builds @igggy/core, tsc type-check + esbuild production bundle (no sourcemaps)
-npm run build:core # builds @igggy/core only (cd ../igggy-web/packages/core && npm run build)
+npm run dev       # builds @igggy/types, then esbuild in watch mode — auto-rebuilds to main.js on save
+npm run build     # builds @igggy/types, tsc type-check + esbuild production bundle (no sourcemaps)
 npm run lint      # eslint on src/ (TypeScript)
 ```
 
@@ -21,9 +20,9 @@ npm run lint      # eslint on src/ (TypeScript)
 
 ## Architecture
 
-Obsidian plugin for audio-to-notes. Audio selected via fuzzy modal → preprocessed to 32kbps MP3 (`src/audio/preprocessor.ts`) → transcribed (Whisper/Deepgram) → two-pass AI pipeline via `@igggy/core` → markdown note written to vault (`src/notes/template.ts` → `src/notes/writer.ts`). All HTTP calls use `Obsidian.requestUrl` except multipart audio uploads.
+Obsidian plugin for audio-to-notes (thin client). Audio selected via fuzzy modal → preprocessed to 32kbps MP3 (`src/audio/preprocessor.ts`) → uploaded to API → API transcribes + runs two-pass pipeline → returns pre-rendered markdown → plugin writes to vault with frontmatter (`src/notes/template.ts` → `src/notes/writer.ts`). All API calls go through `src/api/igggy-client.ts` (IgggyClient class) which wraps `Obsidian.requestUrl`.
 
-**`@igggy/core` dependency:** `file:../igggy-web/packages/core` — shared types, prompts, validation. esbuild inlines it into `main.js`. Run `npm run build:core` after modifying core. Behavioral rules in `../igggy-web/docs/contracts/`.
+**`@igggy/types` dependency:** `@igggy/types` — public npm package with type definitions and non-sensitive utilities (`normalizeNoteType`, `formatNoteFilename`, etc.). `@igggy/core` (private, server-only) is NOT a plugin dependency. Behavioral rules in `../igggy-web/docs/contracts/`.
 
 ## Conventions
 
@@ -41,7 +40,7 @@ Obsidian plugin for audio-to-notes. Audio selected via fuzzy modal → preproces
 - Legacy types `ONE_ON_ONE` and `JOURNAL` are mapped via `normalizeNoteType()` from `@igggy/core` — never create new records with these values
 
 ### AI field names vs. display names (do not conflate)
-The prompt (`@igggy/core/src/prompt.ts`) asks the AI to return `keyHighlights` and `actionItems` — these are the AI-facing JSON keys. Core's `validateNoteContent()` maps `keyHighlights` → `keyTopics`. Display names in `src/notes/template.ts`:
+The server-side prompt asks the AI to return `keyHighlights` and `actionItems` — these are the AI-facing JSON keys. The server's `validateNoteContent()` (in `@igggy/core`, server-only) maps `keyHighlights` → `keyTopics` before returning data to the plugin. Display names in `src/notes/template.ts`:
 - `keyTopics` → rendered as `## Key Highlights`
 - `actionItems` → rendered as `## Tasks`
 
@@ -74,10 +73,11 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `TASKS_ENABLED` | `false` | Hides task UI (settings toggle, regen modal toggle). Tasks are still extracted and stored in note metadata. Flip to `true` when ready to launch. |
 | `TRANSCRIPT_EDITING` | `false` | Hides "Edit transcript" command and context menu item. Editing modal code stays but is unreachable. |
 | `SPEAKER_NAMING` | `false` | Hides "Name speakers" command and context menu item. Deepgram diarization still runs. |
+| `CUSTOM_INSTRUCTIONS` | `false` | Hides custom instructions textarea in recording view (idle + stopped) and regeneration modal. Pipeline still accepts `customPrompt`. Hidden to reduce complexity at launch. |
 
 **Scope — which files trigger which contracts:**
-- `src/ai/providers/*.ts`, `src/commands.ts` (pipeline orchestration) → `ai-pipeline.md`
-- `src/notes/template.ts`, `src/notes/parser.ts` → `frontmatter.md`
+- `src/api/igggy-client.ts` → `api-endpoints.md`
+- `src/notes/template.ts`, `src/notes/parser.ts`, `src/notes/writer.ts`, `src/commands.ts` (frontmatter reads/writes) → `frontmatter.md`
 - `src/settings.ts`, `src/settings-tab.ts` → `settings-parity.md`
 - Files consuming `@igggy/core` types → `core-types.md`
 - `src/sync/*.ts` → `sync.md`

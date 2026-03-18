@@ -1,5 +1,5 @@
 import { App, Modal, Notice, TFile } from 'obsidian'
-import { formatTranscriptParagraphs, parseSpeakerLabel } from '@igggy/core'
+import { formatTranscriptParagraphs, parseSpeakerLabel } from '@igggy/types'
 
 /**
  * Modal for editing the transcript of an Igggy note.

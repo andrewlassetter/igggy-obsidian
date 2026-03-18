@@ -31,6 +31,11 @@ export class IgggySettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.mode)
           .onChange(async (value) => {
             this.plugin.settings.mode = value as 'open' | 'starter' | 'pro'
+            // Auto-enable cloud backup for authenticated users with valid credentials
+            if (this.plugin.settings.accessToken) {
+              this.plugin.settings.cloudBackupEnabled = true
+              this.plugin.settings.folderSyncEnabled = true
+            }
             await this.plugin.saveSettings()
             this.display()
           })
@@ -238,6 +243,12 @@ export class IgggySettingsTab extends PluginSettingTab {
   }
 
   private renderOpenSection(containerEl: HTMLElement): void {
+    // BYOK transparency note
+    containerEl.createEl('p', {
+      text: 'Your API keys are sent securely per-request and immediately discarded \u2014 never stored on our servers, never logged.',
+      cls: 'setting-item-description',
+    })
+
     // ── Transcription ──────────────────────────────────────────────
     new Setting(containerEl).setName('Transcription').setHeading()
 

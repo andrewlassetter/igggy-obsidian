@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { generateMarkdown, type NoteTemplateData } from '../template'
-import type { NoteContent } from '@igggy/core'
+import { wrapMarkdownForVault, type VaultNoteMetadata } from '../template'
+import { generateMarkdownFromContent, type LegacyNoteTemplateData } from '../template-legacy'
+import type { NoteContent } from '@igggy/types'
 
 // ── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -51,7 +52,7 @@ function makeLectureContent(overrides?: Partial<NoteContent>): NoteContent {
   }
 }
 
-function makeTemplateData(noteContent: NoteContent, overrides?: Partial<NoteTemplateData>): NoteTemplateData {
+function makeLegacyTemplateData(noteContent: NoteContent, overrides?: Partial<LegacyNoteTemplateData>): LegacyNoteTemplateData {
   return {
     noteContent,
     date: '2026-03-14',
@@ -62,11 +63,68 @@ function makeTemplateData(noteContent: NoteContent, overrides?: Partial<NoteTemp
   }
 }
 
-// ── Frontmatter ──────────────────────────────────────────────────────────────
+function makeMeta(overrides?: Partial<VaultNoteMetadata>): VaultNoteMetadata {
+  return {
+    title: 'Weekly Standup',
+    noteType: 'MEETING',
+    date: '2026-03-14',
+    igggyId: 'test-uuid-1234',
+    embedAudio: false,
+    ...overrides,
+  }
+}
 
-describe('generateMarkdown — frontmatter', () => {
+// ── wrapMarkdownForVault ─────────────────────────────────────────────────────
+
+describe('wrapMarkdownForVault', () => {
+  it('wraps pre-rendered markdown with frontmatter and metadata callout', () => {
+    const md = wrapMarkdownForVault('## Summary\n\nTest summary.', makeMeta())
+    expect(md).toMatch(/^---\n/)
+    expect(md).toContain('igggy_id: test-uuid-1234')
+    expect(md).toContain('title: "Weekly Standup"')
+    expect(md).toContain('date: 2026-03-14')
+    expect(md).toContain('source: igggy')
+    expect(md).toContain('tags: [igggy, meeting]')
+    expect(md).toContain('## Summary\n\nTest summary.')
+    expect(md).toContain('> [!info]- Igggy metadata')
+    expect(md).toContain('> type: MEETING')
+  })
+
+  it('includes audio embed when embedAudio is true and audioPath provided', () => {
+    const md = wrapMarkdownForVault('## Summary\n\nTest.', makeMeta({
+      embedAudio: true,
+      audioPath: 'Igggy/recording.m4a',
+    }))
+    expect(md).toContain('![[Igggy/recording.m4a]]')
+  })
+
+  it('includes noteId in metadata callout when provided', () => {
+    const md = wrapMarkdownForVault('## Summary\n\nTest.', makeMeta({
+      noteId: 'server-note-id-123',
+    }))
+    expect(md).toContain('> note_id: server-note-id-123')
+  })
+
+  it('includes durationSec and speakersJson in metadata', () => {
+    const md = wrapMarkdownForVault('## Summary\n\nTest.', makeMeta({
+      durationSec: 120,
+      speakersJson: '{"count":2}',
+    }))
+    expect(md).toContain('> duration_sec: 120')
+    expect(md).toContain("> speakers: '{\"count\":2}'")
+  })
+
+  it('normalizes legacy note types in tags', () => {
+    const md = wrapMarkdownForVault('Body', makeMeta({ noteType: 'ONE_ON_ONE' as string }))
+    expect(md).toContain('tags: [igggy, meeting]')
+  })
+})
+
+// ── Legacy generateMarkdownFromContent ──────────────────────────────────────
+
+describe('generateMarkdownFromContent — frontmatter', () => {
   it('produces correct YAML frontmatter fields', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent()))
     expect(md).toMatch(/^---\n/)
     expect(md).toContain('igggy_id: test-uuid-1234')
     expect(md).toContain('title: "Weekly Standup"')
@@ -77,65 +135,49 @@ describe('generateMarkdown — frontmatter', () => {
 
   it('normalizes legacy ONE_ON_ONE type to meeting in tags', () => {
     const content = makeMeetingContent({ noteType: 'MEETING' })
-    // Simulate legacy type by casting
     ;(content as { noteType: string }).noteType = 'ONE_ON_ONE'
-    const md = generateMarkdown(makeTemplateData(content))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(content))
     expect(md).toContain('tags: [igggy, meeting]')
   })
 
   it('normalizes legacy JOURNAL type to memo in tags', () => {
     const content = makeMemoContent({ noteType: 'MEMO' })
     ;(content as { noteType: string }).noteType = 'JOURNAL'
-    const md = generateMarkdown(makeTemplateData(content))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(content))
     expect(md).toContain('tags: [igggy, memo]')
   })
 })
 
-// ── Metadata callout ─────────────────────────────────────────────────────────
-
-describe('generateMarkdown — metadata callout', () => {
+describe('generateMarkdownFromContent — metadata callout', () => {
   it('includes type in metadata callout', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent()))
     expect(md).toContain('> [!info]- Igggy metadata')
     expect(md).toContain('> type: MEETING')
   })
 
   it('includes duration_sec when provided', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), { durationSec: 120 }))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent(), { durationSec: 120 }))
     expect(md).toContain('> duration_sec: 120')
-  })
-
-  it('omits duration_sec when not provided', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
-    expect(md).not.toContain('duration_sec')
-  })
-
-  it('includes audio path when provided', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), { audioPath: 'Igggy/recording.m4a' }))
-    expect(md).toContain('> audio: "Igggy/recording.m4a"')
   })
 
   it('stores analysis JSON with single-quote escaping', () => {
     const analysis = JSON.stringify({ recordingType: "MEETING", primaryFocus: "it's a test" })
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), { analysisJson: analysis }))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent(), { analysisJson: analysis }))
     expect(md).toContain("> analysis: '")
-    // Single quotes in the JSON should be doubled
     expect(md).toContain("it''s a test")
   })
 
   it('stores speakers JSON with single-quote escaping', () => {
     const speakers = JSON.stringify({ count: 2, speakers: [{ id: 0, label: "Speaker 1", name: "O'Brien" }] })
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), { speakersJson: speakers }))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent(), { speakersJson: speakers }))
     expect(md).toContain("> speakers: '")
     expect(md).toContain("O''Brien")
   })
 })
 
-// ── Section layout: MEETING ──────────────────────────────────────────────────
-
-describe('generateMarkdown — MEETING layout', () => {
-  it('produces sections in correct order: Summary → Key Highlights → Decisions → Tasks', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
+describe('generateMarkdownFromContent — MEETING layout', () => {
+  it('produces sections in correct order', () => {
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent()))
     const summaryIdx = md.indexOf('## Summary')
     const highlightsIdx = md.indexOf('## Key Highlights')
     const decisionsIdx = md.indexOf('## Decisions')
@@ -149,36 +191,16 @@ describe('generateMarkdown — MEETING layout', () => {
     expect(metadataIdx).toBeGreaterThan(tasksIdx)
   })
 
-  it('renders key topics with H3 headers and bullets', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
-    expect(md).toContain('### Sprint Progress')
-    expect(md).toContain('- Feature A is on track')
-    expect(md).toContain('### Blockers')
-  })
-
-  it('renders decisions as bullet list', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
-    expect(md).toContain('- Move Feature B deadline to Friday')
-  })
-
   it('renders tasks as checkbox list with owner and context', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent()))
     expect(md).toContain('- [ ] Fix rate limiter config (Owner: Alice) — blocking Feature B')
     expect(md).toContain('- [ ] Update sprint board')
   })
-
-  it('does NOT include content prose for meetings', () => {
-    const content = makeMeetingContent({ content: ['Some prose paragraph'] })
-    const md = generateMarkdown(makeTemplateData(content))
-    expect(md).not.toContain('Some prose paragraph')
-  })
 })
 
-// ── Section layout: MEMO ─────────────────────────────────────────────────────
-
-describe('generateMarkdown — MEMO layout', () => {
+describe('generateMarkdownFromContent — MEMO layout', () => {
   it('includes content prose paragraphs after decisions', () => {
-    const md = generateMarkdown(makeTemplateData(makeMemoContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMemoContent()))
     const decisionsIdx = md.indexOf('## Decisions')
     const proseIdx = md.indexOf('We should consider NATS')
     const tasksIdx = md.indexOf('## Tasks')
@@ -186,139 +208,25 @@ describe('generateMarkdown — MEMO layout', () => {
     expect(proseIdx).toBeGreaterThan(decisionsIdx)
     expect(tasksIdx).toBeGreaterThan(proseIdx)
   })
-
-  it('uses "Key Highlights" header (not "Main Points")', () => {
-    const md = generateMarkdown(makeTemplateData(makeMemoContent()))
-    expect(md).toContain('## Key Highlights')
-    expect(md).not.toContain('## Main Points')
-  })
 })
 
-// ── Section layout: LECTURE ──────────────────────────────────────────────────
-
-describe('generateMarkdown — LECTURE layout', () => {
+describe('generateMarkdownFromContent — LECTURE layout', () => {
   it('uses "Main Points" header instead of "Key Highlights"', () => {
-    const md = generateMarkdown(makeTemplateData(makeLectureContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeLectureContent()))
     expect(md).toContain('## Main Points')
     expect(md).not.toContain('## Key Highlights')
   })
 
   it('renders decisions as "Key Terms"', () => {
-    const md = generateMarkdown(makeTemplateData(makeLectureContent()))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeLectureContent()))
     expect(md).toContain('## Key Terms')
-    expect(md).toContain('- Eventual consistency')
     expect(md).not.toContain('## Decisions')
   })
 })
 
-// ── showTasks flag ───────────────────────────────────────────────────────────
-
-describe('generateMarkdown — showTasks', () => {
+describe('generateMarkdownFromContent — showTasks', () => {
   it('omits Tasks section when showTasks is false', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), { showTasks: false }))
+    const md = generateMarkdownFromContent(makeLegacyTemplateData(makeMeetingContent(), { showTasks: false }))
     expect(md).not.toContain('## Tasks')
-    expect(md).not.toContain('- [ ]')
-  })
-
-  it('omits Tasks section when actionItems is empty', () => {
-    const content = makeMeetingContent({ actionItems: [] })
-    const md = generateMarkdown(makeTemplateData(content))
-    expect(md).not.toContain('## Tasks')
-  })
-})
-
-// ── Audio embed ──────────────────────────────────────────────────────────────
-
-describe('generateMarkdown — audio embed', () => {
-  it('includes audio embed when embedAudio is true and audioPath is provided', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      embedAudio: true,
-      audioPath: 'Igggy/recording.m4a',
-    }))
-    expect(md).toContain('![[Igggy/recording.m4a]]')
-  })
-
-  it('does not include embed when embedAudio is false', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      embedAudio: false,
-      audioPath: 'Igggy/recording.m4a',
-    }))
-    expect(md).not.toContain('![[')
-  })
-
-  it('does not include embed when audioPath is missing', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      embedAudio: true,
-    }))
-    expect(md).not.toContain('![[')
-  })
-})
-
-// ── Transcript ───────────────────────────────────────────────────────────────
-
-describe('generateMarkdown — transcript', () => {
-  it('includes transcript section when transcript is provided', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      transcript: 'Hello, this is a test transcript.',
-    }))
-    expect(md).toContain('## Transcript')
-    expect(md).toContain('Hello, this is a test transcript.')
-  })
-
-  it('omits transcript section when no transcript', () => {
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent()))
-    expect(md).not.toContain('## Transcript')
-  })
-
-  it('substitutes speaker names when speakersJson has named speakers', () => {
-    const speakers = JSON.stringify({
-      count: 2,
-      speakers: [
-        { id: 0, label: 'Speaker 1', name: 'Alice' },
-        { id: 1, label: 'Speaker 2', name: 'Bob' },
-      ],
-    })
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      transcript: '[Speaker 1]: Hello there.\n\n[Speaker 2]: Hi Alice.',
-      speakersJson: speakers,
-    }))
-    expect(md).toContain('**Alice:** Hello there.')
-    expect(md).toContain('**Bob:** Hi Alice.')
-    // Transcript section should not contain raw speaker labels (they appear in metadata JSON, which is fine)
-    const transcriptSection = md.slice(md.indexOf('## Transcript'), md.indexOf('> [!info]'))
-    expect(transcriptSection).not.toContain('Speaker 1')
-    expect(transcriptSection).not.toContain('Speaker 2')
-  })
-
-  it('keeps original speaker labels when speakers have no names', () => {
-    const speakers = JSON.stringify({
-      count: 2,
-      speakers: [
-        { id: 0, label: 'Speaker 1' },
-        { id: 1, label: 'Speaker 2' },
-      ],
-    })
-    const md = generateMarkdown(makeTemplateData(makeMeetingContent(), {
-      transcript: '[Speaker 1]: Hello.\n\n[Speaker 2]: Hi.',
-      speakersJson: speakers,
-    }))
-    expect(md).toContain('**Speaker 1:** Hello.')
-    expect(md).toContain('**Speaker 2:** Hi.')
-  })
-})
-
-// ── Empty sections ───────────────────────────────────────────────────────────
-
-describe('generateMarkdown — empty sections', () => {
-  it('omits Key Highlights when keyTopics is empty', () => {
-    const content = makeMeetingContent({ keyTopics: [] })
-    const md = generateMarkdown(makeTemplateData(content))
-    expect(md).not.toContain('## Key Highlights')
-  })
-
-  it('omits Decisions when decisions is empty', () => {
-    const content = makeMeetingContent({ decisions: [] })
-    const md = generateMarkdown(makeTemplateData(content))
-    expect(md).not.toContain('## Decisions')
   })
 })

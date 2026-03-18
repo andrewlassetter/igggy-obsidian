@@ -11,7 +11,13 @@
  *
  * SPEAKER_NAMING: When false, hides the "Name speakers" command and
  * context menu item. Speaker diarization from Deepgram still runs.
+ *
+ * CUSTOM_INSTRUCTIONS: When false, hides the custom instructions textarea
+ * in the recording view (idle + stopped states) and regeneration modal.
+ * The pipeline still accepts customPrompt if sent — this only hides the UI.
+ * Hidden to reduce complexity at launch; re-enable if user feedback requests it.
  */
 export const TASKS_ENABLED = false
 export const TRANSCRIPT_EDITING = false
 export const SPEAKER_NAMING = false
+export const CUSTOM_INSTRUCTIONS = false

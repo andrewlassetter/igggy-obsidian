@@ -1,7 +1,7 @@
 import { App, Modal, Setting, TFile } from 'obsidian'
-import type { NoteType } from '@igggy/core'
+import type { NoteType } from '@igggy/types'
 import type IgggyPlugin from '../main'
-import { TASKS_ENABLED } from '../feature-flags'
+import { TASKS_ENABLED, CUSTOM_INSTRUCTIONS } from '../feature-flags'
 
 export interface RegenOptions {
   density: 'concise' | 'standard' | 'detailed'
@@ -86,18 +86,20 @@ export class RegenerateModal extends Modal {
     }
 
     // ── Custom instructions ───────────────────────────────────────────────────
-    new Setting(contentEl)
-      .setName('Custom instructions')
-      .setDesc('Optional guidance for the AI.')
-      .addTextArea((text) => {
-        text.inputEl.rows = 3
-        text.inputEl.addClass('igggy-regen-textarea')
-        text
-          .setPlaceholder('Focus on budget numbers, skip small talk\u2026')
-          .onChange((value) => {
-            this.customPrompt = value
-          })
-      })
+    if (CUSTOM_INSTRUCTIONS) {
+      new Setting(contentEl)
+        .setName('Custom instructions')
+        .setDesc('Optional guidance for the AI.')
+        .addTextArea((text) => {
+          text.inputEl.rows = 3
+          text.inputEl.addClass('igggy-regen-textarea')
+          text
+            .setPlaceholder('Focus on budget numbers, skip small talk\u2026')
+            .onChange((value) => {
+              this.customPrompt = value
+            })
+        })
+    }
 
     // ── Action button ─────────────────────────────────────────────────────────
     const actions = contentEl.createDiv({ cls: 'igggy-regen-actions' })

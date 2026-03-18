@@ -1,28 +1,18 @@
-import { Notice, normalizePath, requestUrl } from 'obsidian'
+import { Notice, normalizePath } from 'obsidian'
+import type { SyncPayload } from '@igggy/types'
 import type IgggyPlugin from '../main'
-import { getAuthToken, APP_URL } from '../commands'
+import { createClient } from '../commands'
+import { IgggyApiError } from '../api/igggy-client'
 import { drainPendingSyncs, pullFromCloud } from './pull'
 
 const BATCH_SIZE = 50
 const BATCH_DELAY_MS = 200
 
-interface SyncPayload {
-  igggy_id: string
-  title: string
-  transcript: string
-  summary: string
-  type?: string
-  date?: string
-  duration_sec?: number
-  source: string
-}
-
 /**
- * Extracts the minimum required fields for POST /api/notes/sync from
+ * Extracts the minimum required fields for POST /api/v1/notes/sync from
  * a note's raw markdown content. Returns null if required fields are missing.
  */
 function parseNoteForSync(content: string): SyncPayload | null {
-  // ── Frontmatter ───────────────────────────────────────────────────────────
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/)
   if (!fmMatch) return null
   const fm = fmMatch[1]
@@ -38,15 +28,12 @@ function parseNoteForSync(content: string): SyncPayload | null {
   const durationStr = fm.match(/^duration_sec:\s*(\d+)$/m)?.[1]
   const duration_sec = durationStr ? parseInt(durationStr, 10) : undefined
 
-  // ── Summary ───────────────────────────────────────────────────────────────
   const summaryMatch = content.match(/## Summary\s*\n\n([\s\S]*?)(?=\n\n##|\n\n> \[!note\]|$)/)
   const summary = summaryMatch?.[1]?.trim()
   if (!summary) return null
 
-  // ── Transcript ────────────────────────────────────────────────────────────
   let transcript: string | undefined
 
-  // Callout pattern (current plugin format): > [!note]- Transcript
   const calloutMatch = content.match(/> \[!note\]-?\s*Transcript\s*\n((?:>.*\n?)*)/)
   if (calloutMatch) {
     transcript = calloutMatch[1]
@@ -56,7 +43,6 @@ function parseNoteForSync(content: string): SyncPayload | null {
       .trim()
   }
 
-  // <details> pattern (older plugin notes)
   if (!transcript) {
     const detailsMatch = content.match(
       /## Transcript\s*\n+<details>\s*\n*<summary>Full transcript<\/summary>\s*\n+([\s\S]*?)\n*\s*<\/details>/
@@ -64,9 +50,24 @@ function parseNoteForSync(content: string): SyncPayload | null {
     if (detailsMatch) transcript = detailsMatch[1].trim()
   }
 
+  // Also try bare ## Transcript heading
+  if (!transcript) {
+    const bareMatch = content.match(/## Transcript\s*\n+([\s\S]*?)(?=\n## |\n> \[!info\]|\n---\s*$|$)/)
+    if (bareMatch) transcript = bareMatch[1].trim()
+  }
+
   if (!transcript) return null
 
-  return { igggy_id: igggyId, title, transcript, summary, type, date, duration_sec, source: 'reindex' }
+  return {
+    igggy_id: igggyId,
+    title,
+    transcript,
+    summary,
+    type: (type ?? 'MEETING') as SyncPayload['type'],
+    date,
+    duration_sec,
+    source: 'reindex',
+  }
 }
 
 function sleep(ms: number): Promise<void> {
@@ -74,18 +75,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Scans the entire vault for Igggy notes (markdown files with an igggy_id
- * frontmatter field) and pushes each to POST /api/notes/sync in batches of 50.
- *
- * Starter/Pro only — the server rate-limits this to once per hour.
- * Shows live progress via Obsidian Notice. Handles 429 gracefully.
+ * Scans the entire vault for Igggy notes and pushes each to the sync endpoint
+ * in batches. Starter/Pro only — rate-limited to once per hour.
  */
 export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
-  // Pull from cloud first (downloads any web-created notes into vault)
   await drainPendingSyncs(plugin)
   await pullFromCloud(plugin)
 
-  // Use the metadata cache to find Igggy notes in the output folder
   const outputFolder = normalizePath(plugin.settings.outputFolder)
   const igggyFiles = plugin.app.vault.getMarkdownFiles().filter((f) => {
     if (!f.path.startsWith(outputFolder + '/') && f.path !== outputFolder) return false
@@ -98,15 +94,15 @@ export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
     return
   }
 
-  const token = await getAuthToken(plugin)
-  const progressNotice = new Notice(`Syncing notes… 0 / ${igggyFiles.length}`, 0)
+  const client = createClient(plugin)
+  const progressNotice = new Notice(`Syncing notes\u2026 0 / ${igggyFiles.length}`, 0)
 
   let synced = 0
   let failed = 0
 
   for (let i = 0; i < igggyFiles.length; i++) {
     const file = igggyFiles[i]
-    progressNotice.setMessage(`Syncing notes… ${i + 1} / ${igggyFiles.length}`)
+    progressNotice.setMessage(`Syncing notes\u2026 ${i + 1} / ${igggyFiles.length}`)
 
     try {
       const content = await plugin.app.vault.read(file)
@@ -117,46 +113,23 @@ export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
         continue
       }
 
-      const res = await requestUrl({
-        url: `${APP_URL}/api/notes/sync`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-        throw: false, // don't throw on non-2xx — handle manually
-      })
-
-      if (res.status === 429) {
+      await client.pushSync(payload)
+      synced++
+    } catch (err) {
+      if (err instanceof IgggyApiError && err.status === 429) {
         progressNotice.hide()
-        const retryAfterSec = (res.json as { retryAfterSec?: number }).retryAfterSec
-        const mins = retryAfterSec ? Math.ceil(retryAfterSec / 60) : 60
-        new Notice(
-          `Igggy: Already synced recently — try again in ${mins} minute${mins !== 1 ? 's' : ''}.`,
-          6000
-        )
+        new Notice(err.message, 6000)
         return
       }
-
-      if (res.status >= 200 && res.status < 300) {
-        synced++
-      } else {
-        console.warn('[Igggy] Reindex unexpected status', res.status, 'for', file.path)
-        failed++
-      }
-    } catch (err) {
-      console.error('[Igggy] Reindex error for', file.path, err)
+      console.warn('[Igggy] Reindex error for', file.path, err)
       failed++
     }
 
-    // Brief pause between batches to avoid DB connection exhaustion
     if ((i + 1) % BATCH_SIZE === 0 && i + 1 < igggyFiles.length) {
       await sleep(BATCH_DELAY_MS)
     }
   }
 
-  // Persist lastSyncedAt and refresh settings display
   plugin.settings.lastSyncedAt = Date.now()
   await plugin.saveSettings()
 
@@ -164,7 +137,7 @@ export async function reindexVault(plugin: IgggyPlugin): Promise<void> {
 
   const message =
     failed > 0
-      ? `Synced ${synced} note${synced !== 1 ? 's' : ''} · ${failed} failed`
-      : `Synced ${synced} note${synced !== 1 ? 's' : ''} ✓`
+      ? `Synced ${synced} note${synced !== 1 ? 's' : ''} \u00B7 ${failed} failed`
+      : `Synced ${synced} note${synced !== 1 ? 's' : ''} \u2713`
   new Notice(`Igggy: ${message}`, 5000)
 }

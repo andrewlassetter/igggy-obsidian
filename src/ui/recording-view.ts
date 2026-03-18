@@ -27,6 +27,7 @@ import {
   runProcessingPipeline,
 } from '../commands'
 import { createRecordingPlaceholder } from '../notes/writer'
+import { CUSTOM_INSTRUCTIONS } from '../feature-flags'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -206,20 +207,22 @@ export class RecordingView extends ItemView {
     })
 
     // Custom prompt — optional instructions for the AI (set before recording)
-    const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
-    promptContainer.createEl('label', {
-      text: 'Custom instructions (optional)',
-      cls: 'igggy-rv-custom-prompt-label',
-    })
-    const promptTextarea = promptContainer.createEl('textarea', {
-      placeholder: 'What do you want from this note?',
-      cls: 'igggy-rv-custom-prompt-input',
-    })
-    promptTextarea.rows = 2
-    promptTextarea.value = this.customPrompt
-    promptTextarea.addEventListener('input', () => {
-      this.customPrompt = promptTextarea.value
-    })
+    if (CUSTOM_INSTRUCTIONS) {
+      const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
+      promptContainer.createEl('label', {
+        text: 'Custom instructions (optional)',
+        cls: 'igggy-rv-custom-prompt-label',
+      })
+      const promptTextarea = promptContainer.createEl('textarea', {
+        placeholder: 'What do you want from this note?',
+        cls: 'igggy-rv-custom-prompt-input',
+      })
+      promptTextarea.rows = 2
+      promptTextarea.value = this.customPrompt
+      promptTextarea.addEventListener('input', () => {
+        this.customPrompt = promptTextarea.value
+      })
+    }
 
     body.createDiv({ cls: 'igggy-rv-divider' }).createEl('span', { text: 'or' })
 
@@ -313,16 +316,18 @@ export class RecordingView extends ItemView {
     summary.createEl('p', { text: detail, cls: 'igggy-rv-summary-detail' })
 
     // Custom prompt textarea — optional instructions for the AI
-    const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
-    const promptTextarea = promptContainer.createEl('textarea', {
-      placeholder: 'What do you want from this note? (optional)',
-      cls: 'igggy-rv-custom-prompt-input',
-    })
-    promptTextarea.rows = 2
-    promptTextarea.value = this.customPrompt
-    promptTextarea.addEventListener('input', () => {
-      this.customPrompt = promptTextarea.value
-    })
+    if (CUSTOM_INSTRUCTIONS) {
+      const promptContainer = body.createDiv({ cls: 'igggy-rv-custom-prompt' })
+      const promptTextarea = promptContainer.createEl('textarea', {
+        placeholder: 'What do you want from this note? (optional)',
+        cls: 'igggy-rv-custom-prompt-input',
+      })
+      promptTextarea.rows = 2
+      promptTextarea.value = this.customPrompt
+      promptTextarea.addEventListener('input', () => {
+        this.customPrompt = promptTextarea.value
+      })
+    }
 
     const controls = body.createDiv({ cls: 'igggy-rv-controls' })
     iconButton(controls, 'trash-2', 'Delete recording', 'igggy-rv-btn-secondary')

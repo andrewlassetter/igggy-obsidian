@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting, TFile } from 'obsidian'
-import type { SpeakersData } from '@igggy/core'
+import type { SpeakersData } from '@igggy/types'
 
 /**
  * Modal for naming speakers in an Igggy note.

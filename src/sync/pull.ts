@@ -44,15 +44,11 @@ export function buildIgggyIdIndex(plugin: IgggyPlugin): Set<string> {
  * Pulls notes from the Igggy cloud that don't exist locally.
  * Creates vault files for new notes. Handles pagination.
  *
- * Only runs when mode is 'starter' or 'pro' and cloudBackupEnabled is true.
+ * Runs for any authenticated user (accessToken present).
  */
 export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
   const { settings } = plugin
 
-  if (!settings.cloudBackupEnabled) {
-    console.debug('[Igggy] Pull sync skipped: cloudBackupEnabled is false')
-    return
-  }
   if (!settings.accessToken) {
     console.debug('[Igggy] Pull sync skipped: no access token')
     return
@@ -63,6 +59,7 @@ export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
     const localIndex = buildIgggyIdIndex(plugin)
     let since = settings.lastPulledAt ?? new Date(0).toISOString()
     let totalCreated = 0
+    let totalFailed = 0
     let hasMore = true
 
     while (hasMore) {
@@ -72,9 +69,14 @@ export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
         if (!note.igggyId) continue
         if (localIndex.has(note.igggyId)) continue
 
-        await createVaultFileFromCloud(plugin, note)
-        localIndex.add(note.igggyId)
-        totalCreated++
+        try {
+          await createVaultFileFromCloud(plugin, note)
+          localIndex.add(note.igggyId)
+          totalCreated++
+        } catch (noteErr) {
+          totalFailed++
+          console.error(`[Igggy] Failed to create vault file for note ${note.igggyId}:`, noteErr)
+        }
       }
 
       hasMore = data.hasMore
@@ -91,8 +93,13 @@ export async function pullFromCloud(plugin: IgggyPlugin): Promise<void> {
     if (totalCreated > 0) {
       new Notice(`Igggy: Pulled ${totalCreated} note${totalCreated !== 1 ? 's' : ''} from cloud.`, 4000)
     }
+    if (totalFailed > 0) {
+      new Notice(`Igggy: Failed to sync ${totalFailed} note${totalFailed !== 1 ? 's' : ''} — check console for details.`, 6000)
+    }
   } catch (err) {
     console.error('[Igggy] Pull sync error:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    new Notice(`Igggy: Sync error — ${msg}`, 6000)
   }
 }
 

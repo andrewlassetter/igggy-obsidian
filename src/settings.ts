@@ -34,10 +34,8 @@ export interface IgggySettings {
   embedAudio: boolean     // embed ![[recording.m4a]] link in generated note
   showTasks: boolean      // include ## Tasks section in generated notes
 
-  // ── Folder & Sync ────────────────────────────────────────────────────────────
+  // ── Sync ─────────────────────────────────────────────────────────────────────
 
-  cloudBackupEnabled: boolean  // whether to push notes to Igggy cloud DB after each write
-  folderSyncEnabled: boolean   // whether push-on-write sync is active (enables cloudBackupEnabled calls)
   lastSyncedAt: number | null  // Unix ms timestamp of last on-demand re-index (for display + rate-limit guard)
   lastPulledAt: string | null  // ISO 8601 timestamp of last successful pull sync (used as ?since= cursor)
   pendingSyncs: Array<{ igggyId: string; payload: Record<string, unknown> }> // queued push payloads after double failure
@@ -59,8 +57,6 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   outputFolder: 'Igggy',
   embedAudio: true,
   showTasks: false,
-  cloudBackupEnabled: false,
-  folderSyncEnabled: false,
   lastSyncedAt: null,
   lastPulledAt: null,
   pendingSyncs: [],

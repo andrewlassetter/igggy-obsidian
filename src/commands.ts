@@ -47,8 +47,8 @@ export function createClient(plugin: IgggyPlugin): IgggyClient {
 
 /**
  * Non-blocking push of a completed note to the Igggy cloud DB.
- * Only fires when cloudBackupEnabled is true and a valid access token
- * is available. Available to all tiers post-API-first.
+ * Only fires when a valid access token is available.
+ * Available to all authenticated users post-API-first.
  */
 async function syncNoteToCloud(
   plugin: IgggyPlugin,
@@ -56,10 +56,6 @@ async function syncNoteToCloud(
 ): Promise<void> {
   const { settings } = plugin
 
-  if (!settings.cloudBackupEnabled) {
-    console.debug('[Igggy] Push sync skipped: cloudBackupEnabled is false')
-    return
-  }
   if (!settings.accessToken) {
     console.debug('[Igggy] Push sync skipped: no access token')
     return

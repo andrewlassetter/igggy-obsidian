@@ -31,11 +31,6 @@ export class IgggySettingsTab extends PluginSettingTab {
           .setValue(this.plugin.settings.mode)
           .onChange(async (value) => {
             this.plugin.settings.mode = value as 'open' | 'starter' | 'pro'
-            // Auto-enable cloud backup for authenticated users with valid credentials
-            if (this.plugin.settings.accessToken) {
-              this.plugin.settings.cloudBackupEnabled = true
-              this.plugin.settings.folderSyncEnabled = true
-            }
             await this.plugin.saveSettings()
             this.display()
           })
@@ -120,21 +115,19 @@ export class IgggySettingsTab extends PluginSettingTab {
         )
     }
 
-    // ── Folder & Sync ─────────────────────────────────────────────
-    new Setting(containerEl).setName('Folder & Sync').setHeading()
+    // ── Sync ─────────────────────────────────────────────────────
+    new Setting(containerEl).setName('Sync').setHeading()
 
+    const hasAuth = !!this.plugin.settings.accessToken
     new Setting(containerEl)
-      .setName('Cloud backup')
-      .setDesc('Store a backup copy of your notes in Igggy. When enabled, notes are pushed to the cloud after each write — enabling cross-device access and Chat with Igggy. Disable to keep notes on your device only.')
-      .addToggle((toggle) =>
-        toggle.setValue(this.plugin.settings.cloudBackupEnabled).onChange(async (value) => {
-          this.plugin.settings.cloudBackupEnabled = value
-          this.plugin.settings.folderSyncEnabled = value
-          await this.plugin.saveSettings()
-        })
+      .setName('Sync status')
+      .setDesc(
+        hasAuth
+          ? 'Sync is active \u2014 notes sync automatically every 5 minutes. New notes from the web app will appear in your vault.'
+          : 'Sign in to enable cross-device sync. Notes created on the web app will sync to your vault automatically.'
       )
 
-    const isPaidTier = ['starter', 'pro'].includes(this.plugin.settings.mode) && !!this.plugin.settings.accessToken
+    const isPaidTier = ['starter', 'pro'].includes(this.plugin.settings.mode) && hasAuth
 
     const lastSyncText = this.plugin.settings.lastSyncedAt
       ? `Last synced ${new Date(this.plugin.settings.lastSyncedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}`

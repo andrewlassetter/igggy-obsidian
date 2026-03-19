@@ -17,11 +17,12 @@
  *        → idle (on completion or discard)
  */
 
-import { ItemView, Notice, WorkspaceLeaf, setIcon, setTooltip } from 'obsidian'
+import { ItemView, Notice, WorkspaceLeaf, setIcon, setTooltip, requestUrl } from 'obsidian'
 import type { TFile } from 'obsidian'
 import type IgggyPlugin from '../main'
 import { RecordingSession, PickerCancelledError, type RecordingMode, type SystemAudioOptions } from '../recording/session'
 import { NativeAudioCapture } from '../recording/native-audio'
+import { BinaryManager } from '../recording/binary-manager'
 import {
   validateKeys,
   openSystemAudioFilePicker,
@@ -131,7 +132,7 @@ export class RecordingView extends ItemView {
         break
       case 'requesting':
         body.createEl('p', {
-          text: this.recordingMode === 'mic' ? 'Requesting microphone…' : 'Opening screen picker…',
+          text: this.recordingMode === 'mic' ? 'Requesting microphone…' : 'Setting up system audio…',
           cls: 'igggy-rv-hint',
         })
         break
@@ -498,12 +499,32 @@ export class RecordingView extends ItemView {
     // Derive mode from persisted setting (mic-only or mic + system audio)
     this.recordingMode = this.plugin.settings.includeSystemAudio ? 'both' : 'mic'
 
-    // Build system audio options if needed (native binary path)
+    // Ensure native binary is available if system audio is requested
     let systemOpts: SystemAudioOptions | undefined
     if (this.recordingMode === 'both') {
-      const nativeBinaryPath = this.plugin.settings.nativeAudioPath
-        || this.getDefaultBinaryPath()
-      systemOpts = { binaryPath: nativeBinaryPath }
+      try {
+        const manager = new BinaryManager({
+          pluginDir: this.getPluginDir(),
+          overridePath: this.plugin.settings.nativeAudioPath || undefined,
+          installedVersion: this.plugin.settings.nativeAudioVersion,
+          requestUrl,
+        })
+        const { binaryPath, version } = await manager.ensureBinary((status) => {
+          // Update the requesting state UI with download progress
+          this.updateRequestingStatus(status)
+        })
+        systemOpts = { binaryPath }
+        // Persist the installed version if it changed
+        if (version !== this.plugin.settings.nativeAudioVersion) {
+          this.plugin.settings.nativeAudioVersion = version
+          void this.plugin.saveSettings()
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        this.errorMsg = msg
+        this.transition('error')
+        return
+      }
     }
 
     // Acquire audio source(s) based on selected mode
@@ -699,14 +720,20 @@ export class RecordingView extends ItemView {
 
   // ── Native audio helpers ───────────────────────────────────────────────────
 
-  /** Returns the default path for the native audio binary in the plugin's data directory */
-  private getDefaultBinaryPath(): string {
+  /** Returns the absolute path to the plugin directory */
+  private getPluginDir(): string {
     const pluginDir = this.plugin.manifest.dir
     if (!pluginDir) return ''
     const vaultPath = (this.plugin.app.vault.adapter as { basePath?: string }).basePath ?? ''
-    const platform = process.platform
-    const binaryName = platform === 'win32' ? 'audiotee-wasapi.exe' : 'audiotee'
-    return `${vaultPath}/${pluginDir}/native/${binaryName}`
+    return `${vaultPath}/${pluginDir}`
+  }
+
+  /** Update the status text shown during the 'requesting' state (e.g. download progress) */
+  private updateRequestingStatus(status: string): void {
+    if (this.state !== 'requesting') return
+    const root = this.containerEl.children[1] as HTMLElement
+    const hint = root.querySelector<HTMLElement>('.igggy-rv-hint')
+    if (hint) hint.textContent = status
   }
 
   // ── Format helpers ─────────────────────────────────────────────────────────

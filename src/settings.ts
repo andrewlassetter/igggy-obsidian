@@ -21,7 +21,9 @@ export interface IgggySettings {
 
   // ── Recording ────────────────────────────────────────────────────────────────
 
-  includeSystemAudio: boolean  // capture system audio alongside mic (triggers OS screen-picker)
+  includeSystemAudio: boolean  // capture system audio alongside mic via native binary helper
+  nativeAudioVersion: string   // installed native audio binary version (e.g. '1.0.0') — empty if not installed
+  nativeAudioPath: string      // override path for manually installed binary — empty uses auto-managed path
 
   // ── Note summarization ──────────────────────────────────────────────────────
 
@@ -52,6 +54,8 @@ export const DEFAULT_SETTINGS: IgggySettings = {
   refreshToken: '',
   tokenExpiry: 0,
   includeSystemAudio: false,
+  nativeAudioVersion: '',
+  nativeAudioPath: '',
   noteTone: 'professional',
   noteDensity: 'standard',
   outputFolder: 'Igggy',

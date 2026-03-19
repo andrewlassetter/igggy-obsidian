@@ -1,23 +1,38 @@
 /**
  * RecordingSession
  *
- * Wraps getUserMedia / getDisplayMedia + MediaRecorder + a Web Audio AnalyserNode.
+ * Wraps getUserMedia + native system audio capture + MediaRecorder + a Web Audio AnalyserNode.
  * Supports three recording modes:
  *   - 'mic'    — microphone only (default)
- *   - 'system' — system / window audio via getDisplayMedia (no mic)
+ *   - 'system' — system audio via native binary helper (no mic)
  *   - 'both'   — mic + system audio mixed via AudioContext
  *
+ * On desktop (Obsidian), system audio is captured via a native binary helper
+ * (AudioTee on macOS) because getDisplayMedia is not available in Obsidian's
+ * Electron sandbox. The binary streams raw PCM to stdout, which is converted
+ * to a MediaStream by NativeAudioCapture.
+ *
  * Usage:
- *   const session = await RecordingSession.create('system')
+ *   const session = await RecordingSession.create('system', { binaryPath: '/path/to/audiotee' })
  *   session.start()
  *   // later:
  *   const blob = await session.stop()
  */
 
+import { NativeAudioCapture } from './native-audio'
+
 export type RecordingState = 'recording' | 'paused' | 'inactive'
 
 /** The audio source mode for a recording session. */
 export type RecordingMode = 'mic' | 'system' | 'both'
+
+/** Options for system audio capture via native binary helper */
+export interface SystemAudioOptions {
+  /** Path to the native binary (e.g. AudioTee) */
+  binaryPath: string
+  /** Sample rate in Hz (default: 16000) */
+  sampleRate?: number
+}
 
 /**
  * Thrown when the user dismisses the getDisplayMedia screen picker.
@@ -36,6 +51,7 @@ export class RecordingSession {
   private readonly systemStream: MediaStream | null
   private readonly audioContext: AudioContext
   private readonly analyser: AnalyserNode
+  private readonly nativeCapture: NativeAudioCapture | null
   private readonly chunks: Blob[] = []
 
   private startTime = 0
@@ -47,13 +63,15 @@ export class RecordingSession {
     systemStream: MediaStream | null,
     audioContext: AudioContext,
     analyser: AnalyserNode,
-    mediaRecorder: MediaRecorder
+    mediaRecorder: MediaRecorder,
+    nativeCapture: NativeAudioCapture | null = null
   ) {
     this.micStream = micStream
     this.systemStream = systemStream
     this.audioContext = audioContext
     this.analyser = analyser
     this.mediaRecorder = mediaRecorder
+    this.nativeCapture = nativeCapture
 
     mediaRecorder.ondataavailable = (e: BlobEvent) => {
       if (e.data.size > 0) this.chunks.push(e.data)
@@ -65,73 +83,91 @@ export class RecordingSession {
    * ready to call start() on.
    *
    * @param mode - 'mic' (default), 'system', or 'both'
-   * @throws PickerCancelledError if the user dismisses the screen picker
+   * @param systemAudioOptions - Required when mode is 'system' or 'both'; provides the native binary path
+   * @throws PickerCancelledError if the user dismisses the screen picker (browser fallback only)
    * @throws DOMException (NotAllowedError / NotFoundError) for mic permission errors
-   * @throws Error if the screen picker returns no audio tracks
+   * @throws Error if system audio capture fails (binary not found, permission denied, etc.)
    */
-  static async create(mode: RecordingMode = 'mic'): Promise<RecordingSession> {
+  static async create(
+    mode: RecordingMode = 'mic',
+    systemAudioOptions?: SystemAudioOptions
+  ): Promise<RecordingSession> {
     let micStream: MediaStream | null = null
     let systemStream: MediaStream | null = null
+    let nativeCapture: NativeAudioCapture | null = null
 
     // ── Acquire streams ───────────────────────────────────────────────────────
 
     if (mode === 'system' || mode === 'both') {
-      let displayStream: MediaStream
-      try {
-        displayStream = await navigator.mediaDevices.getDisplayMedia({
-          video: true,
-          audio: true,
-        })
-      } catch (err) {
-        // Only treat user-initiated cancellation as PickerCancelledError.
-        // Real errors (permission denied, API unavailable) propagate to the view.
-        if (
-          err instanceof DOMException &&
-          (err.name === 'AbortError' ||
-           (err.name === 'NotAllowedError' &&
-            err.message.toLowerCase().includes('cancel')))
-        ) {
-          throw new PickerCancelledError()
+      // Desktop (Obsidian): use native binary helper for system audio
+      if (systemAudioOptions) {
+        nativeCapture = new NativeAudioCapture()
+        try {
+          systemStream = await nativeCapture.start({
+            binaryPath: systemAudioOptions.binaryPath,
+            sampleRate: systemAudioOptions.sampleRate,
+          })
+        } catch (err) {
+          nativeCapture.stop()
+          nativeCapture = null
+          throw err
         }
-        // Provide a user-friendly error for system audio capture failures in Obsidian
-        if (err instanceof DOMException && err.name === 'NotAllowedError') {
+      } else {
+        // Browser fallback: use getDisplayMedia (for web app compatibility)
+        let displayStream: MediaStream
+        try {
+          displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: true,
+            audio: true,
+          })
+        } catch (err) {
+          if (
+            err instanceof DOMException &&
+            (err.name === 'AbortError' ||
+             (err.name === 'NotAllowedError' &&
+              err.message.toLowerCase().includes('cancel')))
+          ) {
+            throw new PickerCancelledError()
+          }
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            throw new Error(
+              'System audio capture is not available. Obsidian may not support this feature on your system. ' +
+              'Try using the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
+              'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
+            )
+          }
+          if (err instanceof TypeError || (err instanceof DOMException && err.name === 'NotSupportedError')) {
+            throw new Error(
+              'System audio capture is not supported in this version of Obsidian. ' +
+              'Use the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
+              'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
+            )
+          }
+          throw err
+        }
+
+        displayStream.getVideoTracks().forEach(t => t.stop())
+        const audioTracks = displayStream.getAudioTracks()
+        if (audioTracks.length === 0) {
+          displayStream.getTracks().forEach(t => t.stop())
           throw new Error(
-            'System audio capture is not available. Obsidian may not support this feature on your system. ' +
-            'Try using the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
-            'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
+            'No audio was shared. In the screen picker, make sure "Share audio" is checked.'
           )
         }
-        if (err instanceof TypeError || (err instanceof DOMException && err.name === 'NotSupportedError')) {
-          throw new Error(
-            'System audio capture is not supported in this version of Obsidian. ' +
-            'Use the Igggy web app (app.igggy.ai) for system audio recording, or use a loopback ' +
-            'audio tool like BlackHole (macOS) to route system audio to your microphone input.'
-          )
-        }
-        throw err
+        systemStream = displayStream
       }
-
-      // Stop video tracks — only the audio is needed
-      displayStream.getVideoTracks().forEach(t => t.stop())
-
-      const audioTracks = displayStream.getAudioTracks()
-      if (audioTracks.length === 0) {
-        // User picked a source but didn't enable "Share audio"
-        displayStream.getTracks().forEach(t => t.stop())
-        throw new Error(
-          'No audio was shared. In the screen picker, make sure "Share audio" is checked.'
-        )
-      }
-
-      systemStream = displayStream
     }
 
     if (mode === 'mic' || mode === 'both') {
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
       } catch (err) {
-        // Release system stream if already acquired before re-throwing
+        // Release system stream / native capture if already acquired before re-throwing
         systemStream?.getTracks().forEach(t => t.stop())
+        if (nativeCapture) {
+          nativeCapture.stop()
+          nativeCapture = null
+        }
         throw err
       }
     }
@@ -139,7 +175,6 @@ export class RecordingSession {
     // ── Build audio graph ─────────────────────────────────────────────────────
 
     const audioContext = new AudioContext()
-    // Ensure the context is running — Chromium may start it suspended
     if (audioContext.state === 'suspended') await audioContext.resume()
     const analyser = audioContext.createAnalyser()
     analyser.fftSize = 64                // 32 frequency bins — plenty for 28 bars
@@ -161,7 +196,7 @@ export class RecordingSession {
       // NOT connected to audioContext.destination — no playback feedback
       recordingStream = destination.stream
     } else if (systemStream) {
-      // 'system' only: use display stream audio directly
+      // 'system' only: use system stream directly
       const sysSource = audioContext.createMediaStreamSource(systemStream)
       sysSource.connect(analyser)
       // NOT connected to audioContext.destination — no playback feedback
@@ -178,7 +213,17 @@ export class RecordingSession {
       ? new MediaRecorder(recordingStream, { mimeType })
       : new MediaRecorder(recordingStream)
 
-    return new RecordingSession(micStream, systemStream, audioContext, analyser, mediaRecorder)
+    // ── Set up graceful degradation for 'both' mode ─────────────────────────
+
+    if (nativeCapture && mode === 'both') {
+      nativeCapture.onProcessCrash(() => {
+        console.warn('[Igggy] System audio helper crashed mid-recording — mic-only recording continues')
+        // The mic stream and MediaRecorder continue running.
+        // System audio simply stops appearing in the mix — no user action needed.
+      })
+    }
+
+    return new RecordingSession(micStream, systemStream, audioContext, analyser, mediaRecorder, nativeCapture)
   }
 
   /** Begin recording. Call after createRecordingPlaceholder() has opened the note. */
@@ -200,12 +245,13 @@ export class RecordingSession {
     this.mediaRecorder.resume()
   }
 
-  /** Stop recording, release all streams and AudioContext, return the audio blob. */
+  /** Stop recording, release all streams, native processes, and AudioContext, return the audio blob. */
   async stop(): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const cleanup = (): void => {
         this.micStream?.getTracks().forEach(t => t.stop())
         this.systemStream?.getTracks().forEach(t => t.stop())
+        this.nativeCapture?.stop()
         void this.audioContext.close()
       }
 

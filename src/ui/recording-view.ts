@@ -20,7 +20,8 @@
 import { ItemView, Notice, WorkspaceLeaf, setIcon, setTooltip } from 'obsidian'
 import type { TFile } from 'obsidian'
 import type IgggyPlugin from '../main'
-import { RecordingSession, PickerCancelledError, type RecordingMode } from '../recording/session'
+import { RecordingSession, PickerCancelledError, type RecordingMode, type SystemAudioOptions } from '../recording/session'
+import { NativeAudioCapture } from '../recording/native-audio'
 import {
   validateKeys,
   openSystemAudioFilePicker,
@@ -173,7 +174,7 @@ export class RecordingView extends ItemView {
 
     // ── System audio toggle ───────────────────────────────────────────────────
 
-    const canCaptureSystem = typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+    const systemAudioSupport = NativeAudioCapture.isSupported()
 
     const toggleRow = body.createDiv({ cls: 'igggy-rv-toggle-row' })
     const checkbox = toggleRow.createEl('input', { cls: 'igggy-rv-toggle-checkbox' })
@@ -185,17 +186,17 @@ export class RecordingView extends ItemView {
     setIcon(infoIcon, 'info')
     setTooltip(infoIcon, 'Records audio playing through your speakers or headphones — meeting calls, videos, music, etc.')
 
-    if (canCaptureSystem) {
+    if (systemAudioSupport.supported) {
       checkbox.checked = this.plugin.settings.includeSystemAudio
     } else {
       checkbox.checked = false
       checkbox.disabled = true
       toggleRow.style.opacity = '0.5'
-      setTooltip(toggleRow, 'Speaker audio capture is not available in Obsidian desktop. Use app.igggy.ai for this feature.')
+      setTooltip(toggleRow, systemAudioSupport.reason ?? 'Speaker audio capture is not available on this system.')
     }
 
     const hintEl = body.createEl('p', {
-      text: 'Select a window or screen — make sure "Share audio" is checked.',
+      text: 'System audio will be captured automatically when recording starts.',
       cls: 'igggy-rv-source-hint',
     })
     hintEl.toggleClass('igggy-hidden', !checkbox.checked)
@@ -359,8 +360,11 @@ export class RecordingView extends ItemView {
     const procBarCount = Math.floor((body.clientWidth || BAR_COUNT * 5) / 5)
     for (let i = 0; i < procBarCount; i++) {
       const bar = barsDiv.createDiv({ cls: 'bar' })
-      const delay = -(i / Math.max(procBarCount - 1, 1)) * 1.4
+      const delay = -(i / Math.max(procBarCount - 1, 1)) * 2.8
       bar.style.setProperty('--wave-delay', `${delay.toFixed(3)}s`)
+      // Organic height variation — deterministic per bar (18–28px range)
+      const t = Math.sin(i * 1.7 + 0.3) * 0.5 + 0.5
+      bar.style.setProperty('--wave-peak', `${Math.round(18 + t * 10)}px`)
     }
 
     body.createEl('p', {
@@ -494,10 +498,18 @@ export class RecordingView extends ItemView {
     // Derive mode from persisted setting (mic-only or mic + system audio)
     this.recordingMode = this.plugin.settings.includeSystemAudio ? 'both' : 'mic'
 
+    // Build system audio options if needed (native binary path)
+    let systemOpts: SystemAudioOptions | undefined
+    if (this.recordingMode === 'both') {
+      const nativeBinaryPath = this.plugin.settings.nativeAudioPath
+        || this.getDefaultBinaryPath()
+      systemOpts = { binaryPath: nativeBinaryPath }
+    }
+
     // Acquire audio source(s) based on selected mode
     let session: RecordingSession
     try {
-      session = await RecordingSession.create(this.recordingMode)
+      session = await RecordingSession.create(this.recordingMode, systemOpts)
     } catch (err) {
       // User dismissed the screen picker — return to idle silently (not an error)
       if (err instanceof PickerCancelledError) {
@@ -507,10 +519,10 @@ export class RecordingView extends ItemView {
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('No audio was shared')) {
         this.errorMsg = msg
-      } else if (msg.includes('NotAllowed') || msg.includes('Permission denied')) {
-        this.errorMsg = this.recordingMode === 'both'
-          ? 'Screen recording access denied — allow access in System Settings then restart Obsidian.'
-          : 'Microphone access denied — allow access and try again.'
+      } else if (msg.includes('permission') || msg.includes('Permission denied') || msg.includes('NotAllowed')) {
+        this.errorMsg = this.recordingMode === 'mic'
+          ? 'Microphone access denied — allow access and try again.'
+          : msg
       } else if (msg.includes('NotFound') || msg.includes('not found')) {
         this.errorMsg = 'No microphone found — connect one and try again.'
       } else {
@@ -683,6 +695,18 @@ export class RecordingView extends ItemView {
     } else {
       this.render()
     }
+  }
+
+  // ── Native audio helpers ───────────────────────────────────────────────────
+
+  /** Returns the default path for the native audio binary in the plugin's data directory */
+  private getDefaultBinaryPath(): string {
+    const pluginDir = this.plugin.manifest.dir
+    if (!pluginDir) return ''
+    const vaultPath = (this.plugin.app.vault.adapter as { basePath?: string }).basePath ?? ''
+    const platform = process.platform
+    const binaryName = platform === 'win32' ? 'audiotee-wasapi.exe' : 'audiotee'
+    return `${vaultPath}/${pluginDir}/native/${binaryName}`
   }
 
   // ── Format helpers ─────────────────────────────────────────────────────────

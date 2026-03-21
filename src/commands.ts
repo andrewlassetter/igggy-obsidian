@@ -213,28 +213,34 @@ export async function runProcessingPipeline(
   firstStageLine: string,
   audioPath?: string,
   embedAudio = false,
-  customPrompt?: string
+  customPrompt?: string,
+  onProgress?: (label: string) => void
 ): Promise<void> {
   const { app, settings } = plugin
   let step = 'pre-processing audio'
+
+  const setProgress = (statusText: string, label: string, nextStep: string): void => {
+    plugin.setStatusText(statusText)
+    onProgress?.(label)
+    step = nextStep
+  }
 
   try {
     const client = createClient(plugin)
 
     // ── Pre-process ──────────────────────────────────────────────────────────
     plugin.setStatusText('\uD83D\uDD0A Pre-processing audio\u2026')
+    onProgress?.('Preparing your audio...')
     const processed = await preprocessAudio(rawBuffer, filename)
 
     // ── Upload to S3 ─────────────────────────────────────────────────────────
-    step = 'uploading audio'
-    plugin.setStatusText('\u2601\uFE0F Uploading audio\u2026')
+    setProgress('\u2601\uFE0F Uploading audio\u2026', 'Uploading...', 'uploading audio')
 
     const { signedUrl, path: storagePath } = await client.getUploadUrl(processed.filename)
     await client.uploadAudio(signedUrl, processed.buffer, 'audio/webm')
 
     // ── Process via API ──────────────────────────────────────────────────────
-    step = 'processing note'
-    plugin.setStatusText('\u2728 Processing your note\u2026')
+    setProgress('\u2728 Processing your note\u2026', 'Creating your note...', 'processing note')
 
     const result: ProcessResponse = await client.process({
       type: 'audio',
@@ -246,6 +252,7 @@ export async function runProcessingPipeline(
 
     // ── Write to vault ───────────────────────────────────────────────────────
     step = 'writing note'
+    onProgress?.('Almost done...')
     const meta: VaultNoteMetadata = {
       title: result.content.title,
       noteType: result.content.noteType,
@@ -291,13 +298,18 @@ export async function runProcessingPipeline(
       : err instanceof Error ? err.message : String(err)
     console.error(`[Igggy] Error during "${step}":`, err)
     plugin.setStatusText('')
-    await setPlaceholderError(app, placeholderFile, step, friendlyError(message, step))
+    const friendly = friendlyError(message, step)
+    await setPlaceholderError(app, placeholderFile, step, friendly)
   }
 }
 
 // ── File pipeline ─────────────────────────────────────────────────────────────
 
-async function processAudioFile(plugin: IgggyPlugin, file: TFile): Promise<void> {
+export async function processAudioFile(
+  plugin: IgggyPlugin,
+  file: TFile,
+  onProgress?: (label: string) => void
+): Promise<void> {
   const { settings, app } = plugin
 
   const keyError = validateKeys(plugin)
@@ -323,6 +335,7 @@ async function processAudioFile(plugin: IgggyPlugin, file: TFile): Promise<void>
     const message = err instanceof Error ? err.message : String(err)
     console.error('[Igggy] Failed to read audio file:', err)
     await setPlaceholderError(app, placeholderFile, 'reading file', friendlyError(message, 'reading file'))
+
     return
   }
 
@@ -338,7 +351,9 @@ async function processAudioFile(plugin: IgggyPlugin, file: TFile): Promise<void>
     new Date(file.stat.ctime),
     firstStageLine,
     settings.embedAudio ? file.path : undefined,
-    settings.embedAudio
+    settings.embedAudio,
+    undefined,
+    onProgress
   )
 }
 
@@ -499,7 +514,7 @@ async function regenerateNote(
       ? err.message
       : err instanceof Error ? err.message : String(err)
     console.error('[Igggy] Regeneration error:', err)
-    new Notice(`Igggy: Regeneration failed \u2014 ${friendlyError(message, 'generating note')}`, 6000)
+    new Notice(`Igggy: Regeneration failed \u2014 ${friendlyErrorText(message, 'generating note')}`, 6000)
   }
 }
 
@@ -838,28 +853,99 @@ async function processPastedTranscript(plugin: IgggyPlugin, transcript: string):
   }
 }
 
+// ── Structured Error Types ────────────────────────────────────────────────────
+
+export type ErrorAction = 'retry' | 'settings' | 'upgrade'
+
+export interface FriendlyErrorResult {
+  primary: string
+  detail?: string
+  actions: ErrorAction[]
+  reassurance?: string
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function friendlyError(message: string, step: string): string {
+export function friendlyError(message: string, step: string): FriendlyErrorResult {
   const lower = message.toLowerCase()
 
-  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid_api_key')) {
-    return 'invalid API key \u2014 check your key in plugin settings'
-  }
-  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota')) {
-    return 'API rate limit or quota exceeded \u2014 try again shortly'
-  }
-  if (lower.includes('413') || lower.includes('too large') || lower.includes('file size')) {
-    return 'audio file is too large for the API \u2014 try a shorter recording'
-  }
-  if (lower.includes('fetch') || lower.includes('network') || lower.includes('econnrefused') || lower.includes('enotfound')) {
-    return step === 'reading file'
-      ? 'could not read file \u2014 ensure it is fully synced and not stored only in iCloud'
-      : 'network request failed \u2014 check your internet connection'
-  }
+  // 1. Unsupported audio format
   if (lower.includes('could not decode') || lower.includes('decodeaudiodata') || lower.includes('dom exception')) {
-    return 'could not decode audio \u2014 the file format may not be supported'
+    return {
+      primary: "Igggy can't read this file. Try a different format \u2014 MP3, M4A, and WAV work best.",
+      detail: 'Supported formats: .mp3, .m4a, .wav, .webm, .ogg, .flac',
+      actions: [],
+    }
   }
 
-  return message
+  // 2. No internet connection
+  if (lower.includes('fetch') || lower.includes('network') || lower.includes('econnrefused') || lower.includes('enotfound')) {
+    if (step === 'reading file') {
+      return {
+        primary: "Igggy can't read this file. Make sure it's fully synced and not stored only in iCloud.",
+        actions: ['retry'],
+      }
+    }
+    return {
+      primary: "You're offline. Igggy needs an internet connection to process audio. We'll hold onto the file until you can try again.",
+      actions: ['retry'],
+      reassurance: 'Your audio is safe in your vault.',
+    }
+  }
+
+  // 3. Invalid API key
+  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid_api_key')) {
+    return {
+      primary: "Your API key isn't working. Check that it's entered correctly in Igggy settings.",
+      actions: ['settings', 'retry'],
+    }
+  }
+
+  // 4. Free tier exhausted
+  if (lower.includes('402') || lower.includes('upgrade_required') || lower.includes('free recordings used up')) {
+    return {
+      primary: "You've used all your free recordings. Upgrade your plan to keep going.",
+      actions: ['upgrade'],
+    }
+  }
+
+  // 5. Rate limited
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota')) {
+    return {
+      primary: 'Too many requests. Give Igggy a few seconds and try again.',
+      actions: ['retry'],
+    }
+  }
+
+  // 6. Processing timeout / truncated response
+  if (lower.includes('response_invalid') || lower.includes('response_incomplete') ||
+      lower.includes('unexpected end of json') || lower.includes('timed out') ||
+      lower.includes('504') || lower.includes('503')) {
+    return {
+      primary: "This one's taking longer than expected. Your audio is safe in your vault. You can try processing it again.",
+      actions: ['retry'],
+      reassurance: 'Your audio is safe in your vault.',
+    }
+  }
+
+  // 7. File too large
+  if (lower.includes('413') || lower.includes('too large') || lower.includes('file size')) {
+    return {
+      primary: 'This file is too large to process. Igggy can handle recordings up to about 90 minutes.',
+      actions: [],
+      reassurance: 'Your audio is safe in your vault.',
+    }
+  }
+
+  // Fallback — return raw message with retry action
+  return {
+    primary: message,
+    actions: ['retry'],
+  }
+}
+
+/** Flatten a structured error to a single string (for contexts that need plain text) */
+export function friendlyErrorText(message: string, step: string): string {
+  const result = friendlyError(message, step)
+  return result.primary
 }

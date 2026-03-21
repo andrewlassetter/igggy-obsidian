@@ -29,7 +29,26 @@ export class IgggyClient {
   // ── Processing ──────────────────────────────────────────────────────────
 
   async process(request: ProcessRequest): Promise<ProcessResponse> {
-    return this.post('/api/v1/process', request)
+    const result = await this.post<ProcessResponse>('/api/v1/process', request)
+
+    // Validate required fields — catches truncated responses and malformed JSON
+    if (!result || typeof result !== 'object') {
+      throw new IgggyApiError(
+        'Server returned an empty or invalid response.',
+        'RESPONSE_INVALID',
+        0
+      )
+    }
+    const r = result as unknown as Record<string, unknown>
+    if (!r.markdown || !r.content || !r.igggyId) {
+      throw new IgggyApiError(
+        'Server response was incomplete — processing may have timed out.',
+        'RESPONSE_INCOMPLETE',
+        0
+      )
+    }
+
+    return result
   }
 
   // ── Upload ──────────────────────────────────────────────────────────────
@@ -162,7 +181,27 @@ export class IgggyClient {
     // DELETE returns no body
     if (method === 'DELETE') return undefined
 
-    return res.json
+    // Guard against truncated/empty responses (e.g. Vercel timeout mid-transfer)
+    try {
+      const data = res.json
+      if (data === undefined || data === null) {
+        throw new IgggyApiError(
+          'Server returned an empty response — the request may have timed out.',
+          'RESPONSE_INVALID',
+          res.status
+        )
+      }
+      return data
+    } catch (err) {
+      // Re-throw our own errors
+      if (err instanceof IgggyApiError) throw err
+      // JSON parse failure (truncated response body)
+      throw new IgggyApiError(
+        'Server response was cut short — the request may have timed out.',
+        'RESPONSE_INVALID',
+        res.status
+      )
+    }
   }
 }
 

@@ -17,8 +17,7 @@
  *        → idle (on completion or discard)
  */
 
-import { ItemView, Notice, WorkspaceLeaf, setIcon, setTooltip, requestUrl } from 'obsidian'
-import type { TFile } from 'obsidian'
+import { ItemView, Notice, WorkspaceLeaf, TFile, setIcon, setTooltip, requestUrl, normalizePath } from 'obsidian'
 import type IgggyPlugin from '../main'
 import { RecordingSession, PickerCancelledError, type RecordingMode, type SystemAudioOptions } from '../recording/session'
 import { NativeAudioCapture } from '../recording/native-audio'
@@ -27,6 +26,10 @@ import {
   validateKeys,
   openSystemAudioFilePicker,
   runProcessingPipeline,
+  processAudioFile,
+  friendlyError,
+  type FriendlyErrorResult,
+  type ErrorAction,
 } from '../commands'
 import { createRecordingPlaceholder } from '../notes/writer'
 import { CUSTOM_INSTRUCTIONS } from '../feature-flags'
@@ -75,8 +78,10 @@ export class RecordingView extends ItemView {
   private finalElapsed = 0
   private capturedAt: Date | null = null
   private errorMsg = ''
+  private errorResult: FriendlyErrorResult | null = null
   private processLabel = ''
   private customPrompt = ''
+  private lastAudioFile: TFile | null = null  // retained for retry-from-file
 
   // ── Active handles (cancelled in onClose) ──────────────────────────────────
   private timerInterval: ReturnType<typeof setInterval> | null = null
@@ -168,10 +173,14 @@ export class RecordingView extends ItemView {
       })
     }
 
+    // ── Recording section ─────────────────────────────────────────────────────
+    body.createEl('p', {
+      text: 'Record audio from your microphone and device',
+      cls: 'igggy-rv-section-label',
+    })
     const btn = iconButton(body, 'mic', 'Start recording', 'igggy-rv-btn-primary', 'Start recording')
     btn.disabled = !!keyError
     btn.addEventListener('click', () => { void this.handleStart() })
-    body.createEl('p', { text: 'Record audio from your microphone', cls: 'igggy-rv-btn-desc' })
 
     // ── System audio toggle ───────────────────────────────────────────────────
 
@@ -226,11 +235,16 @@ export class RecordingView extends ItemView {
       })
     }
 
+    // ── Upload section ────────────────────────────────────────────────────────
     body.createDiv({ cls: 'igggy-rv-divider' }).createEl('span', { text: 'or' })
 
-    iconButton(body, 'upload', 'From file…', 'igggy-rv-btn-secondary', 'Process an audio file')
-      .addEventListener('click', () => { openSystemAudioFilePicker(this.plugin) })
-    body.createEl('p', { text: 'Process an audio file into an AI note', cls: 'igggy-rv-btn-desc' })
+    body.createEl('p', {
+      text: 'Create a note from an existing audio file',
+      cls: 'igggy-rv-section-label',
+    })
+    const uploadBtn = iconButton(body, 'upload', 'Upload file', 'igggy-rv-btn-secondary', 'Upload an audio file')
+    uploadBtn.disabled = !!keyError
+    uploadBtn.addEventListener('click', () => { void this.handleUploadFile() })
   }
 
   // ── Recording ──────────────────────────────────────────────────────────────
@@ -393,9 +407,48 @@ export class RecordingView extends ItemView {
   // ── Error ──────────────────────────────────────────────────────────────────
 
   private renderError(body: HTMLElement): void {
-    body.createEl('p', { text: this.errorMsg, cls: 'igggy-rv-error' })
-    iconButton(body, 'rotate-ccw', 'Try again', 'igggy-rv-btn-secondary')
-      .addEventListener('click', () => this.transition('idle'))
+    if (this.errorResult) {
+      // Structured error with contextual actions
+      body.createEl('p', { text: this.errorResult.primary, cls: 'igggy-rv-error igggy-rv-error-primary' })
+
+      if (this.errorResult.reassurance) {
+        body.createEl('p', { text: this.errorResult.reassurance, cls: 'igggy-rv-error-reassurance' })
+      }
+
+      const actions = body.createDiv({ cls: 'igggy-rv-controls' })
+      for (const action of this.errorResult.actions) {
+        if (action === 'retry') {
+          iconButton(actions, 'rotate-ccw', 'Try again', 'igggy-rv-btn-secondary')
+            .addEventListener('click', () => { void this.handleRetry() })
+        } else if (action === 'settings') {
+          iconButton(actions, 'settings', 'Settings', 'igggy-rv-btn-secondary')
+            .addEventListener('click', () => {
+              // Open Igggy settings tab
+              const setting = (this.plugin.app as unknown as { setting?: { open(): void; openTabById?(id: string): void } }).setting
+              if (setting) {
+                setting.open()
+                setting.openTabById?.('igggy')
+              }
+            })
+        } else if (action === 'upgrade') {
+          iconButton(actions, 'external-link', 'Upgrade plan', 'igggy-rv-btn-secondary')
+            .addEventListener('click', () => {
+              window.open('https://app.igggy.ai', '_blank')
+            })
+        }
+      }
+
+      // Always provide a way to dismiss and go back to idle
+      if (!this.errorResult.actions.includes('retry')) {
+        iconButton(actions, 'x', 'Dismiss', 'igggy-rv-btn-secondary')
+          .addEventListener('click', () => this.transition('idle'))
+      }
+    } else {
+      // Fallback: plain text error
+      body.createEl('p', { text: this.errorMsg, cls: 'igggy-rv-error' })
+      iconButton(body, 'rotate-ccw', 'Try again', 'igggy-rv-btn-secondary')
+        .addEventListener('click', () => this.transition('idle'))
+    }
   }
 
   // ── Canvas waveform (adapted from ui/waveform.ts) ──────────────────────────
@@ -650,10 +703,20 @@ export class RecordingView extends ItemView {
     this.blob = null
     this.placeholderFile = null
     this.plugin.recordingPlaceholder = null
-    this.processLabel = 'Processing…'
+    this.processLabel = 'Preparing your audio...'
     this.transition('processing')
 
     const promptForPipeline = this.customPrompt.trim() || undefined
+
+    const onProgress = (label: string): void => {
+      this.processLabel = label
+      const root = this.containerEl.children[1] as HTMLElement
+      const body = root.querySelector<HTMLElement>('.igggy-rv-body')
+      if (body) {
+        const hint = body.querySelector<HTMLElement>('.igggy-rv-hint')
+        if (hint) hint.textContent = label
+      }
+    }
 
     try {
       await runProcessingPipeline(
@@ -666,10 +729,13 @@ export class RecordingView extends ItemView {
         '🎙️ Recording ready ✓',
         undefined,
         false,
-        promptForPipeline
+        promptForPipeline,
+        onProgress
       )
     } catch (err) {
-      this.errorMsg = err instanceof Error ? err.message : 'Processing failed'
+      const message = err instanceof Error ? err.message : 'Processing failed'
+      this.errorResult = friendlyError(message, 'processing note')
+      this.errorMsg = this.errorResult.primary
       this.transition('error')
       return
     }
@@ -702,6 +768,141 @@ export class RecordingView extends ItemView {
     this.customPrompt = ''
     this.plugin.recordingPlaceholder = null
     this.transition('idle')
+  }
+
+  /** Handle "Upload file" button — opens file picker, then runs pipeline in sidebar processing state */
+  private async handleUploadFile(): Promise<void> {
+    const keyError = validateKeys(this.plugin)
+    if (keyError) {
+      new Notice(keyError, 6000)
+      return
+    }
+
+    // Open system file picker — returns a TFile once imported to vault, or null if cancelled
+    const vaultFile = await this.pickAndImportAudioFile()
+    if (!vaultFile) return
+
+    this.lastAudioFile = vaultFile
+    this.processLabel = 'Preparing your audio...'
+    this.transition('processing')
+
+    const onProgress = (label: string): void => {
+      this.processLabel = label
+      // Re-render body to update the label
+      const root = this.containerEl.children[1] as HTMLElement
+      const body = root.querySelector<HTMLElement>('.igggy-rv-body')
+      if (body) {
+        const hint = body.querySelector<HTMLElement>('.igggy-rv-hint')
+        if (hint) hint.textContent = label
+      }
+    }
+
+    try {
+      await processAudioFile(this.plugin, vaultFile, onProgress)
+      this.lastAudioFile = null
+      this.transition('idle')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Processing failed'
+      this.errorResult = friendlyError(message, 'processing note')
+      this.errorMsg = this.errorResult.primary
+      this.transition('error')
+    }
+  }
+
+  /** Retry processing from the last audio file (file upload errors) or reset to idle (recording errors) */
+  private async handleRetry(): Promise<void> {
+    if (this.lastAudioFile) {
+      // Retry file upload — reprocess from saved vault file
+      this.processLabel = 'Preparing your audio...'
+      this.errorResult = null
+      this.transition('processing')
+
+      const onProgress = (label: string): void => {
+        this.processLabel = label
+        const root = this.containerEl.children[1] as HTMLElement
+        const body = root.querySelector<HTMLElement>('.igggy-rv-body')
+        if (body) {
+          const hint = body.querySelector<HTMLElement>('.igggy-rv-hint')
+          if (hint) hint.textContent = label
+        }
+      }
+
+      try {
+        await processAudioFile(this.plugin, this.lastAudioFile, onProgress)
+        this.lastAudioFile = null
+        this.transition('idle')
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Processing failed'
+        this.errorResult = friendlyError(message, 'processing note')
+        this.errorMsg = this.errorResult.primary
+        this.transition('error')
+      }
+    } else {
+      // No file to retry — just reset to idle
+      this.errorResult = null
+      this.transition('idle')
+    }
+  }
+
+  /** Opens native file picker, imports selected file to vault, returns TFile or null */
+  private pickAndImportAudioFile(): Promise<TFile | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.m4a,.mp3,.wav,.webm,.ogg,.flac,.aac,.mp4'
+      input.style.display = 'none'
+      document.body.appendChild(input)
+
+      input.addEventListener('change', async () => {
+        const file = input.files?.[0]
+        input.remove()
+        if (!file) { resolve(null); return }
+
+        try {
+          const buffer = await file.arrayBuffer()
+          const { app, settings } = this.plugin
+          const folder = settings.outputFolder || ''
+          if (folder) {
+            const existing = app.vault.getAbstractFileByPath(folder)
+            if (!existing) await app.vault.createFolder(folder)
+          }
+
+          const safeName = file.name.replace(/[/\\:*?"<>|#^[\]]/g, '_')
+          const audioVaultPath = normalizePath(folder ? `${folder}/${safeName}` : safeName)
+
+          let finalAudioPath = audioVaultPath
+          if (app.vault.getAbstractFileByPath(audioVaultPath)) {
+            const ext = safeName.lastIndexOf('.')
+            const base = ext > 0 ? safeName.slice(0, ext) : safeName
+            const suffix = ext > 0 ? safeName.slice(ext) : ''
+            finalAudioPath = normalizePath(
+              folder ? `${folder}/${base}-${Date.now()}${suffix}` : `${base}-${Date.now()}${suffix}`
+            )
+          }
+
+          await app.vault.createBinary(finalAudioPath, buffer)
+          const vaultFile = app.vault.getAbstractFileByPath(finalAudioPath)
+          if (vaultFile instanceof TFile) {
+            resolve(vaultFile)
+          } else {
+            new Notice('Igggy: Failed to import audio file into vault.', 5000)
+            resolve(null)
+          }
+        } catch (err) {
+          console.error('[Igggy] System file picker error:', err)
+          new Notice('Igggy: Failed to import audio file.', 5000)
+          resolve(null)
+        }
+      })
+
+      // Handle cancel — if the user closes the file picker without selecting
+      input.addEventListener('cancel', () => {
+        input.remove()
+        resolve(null)
+      })
+
+      input.click()
+    })
   }
 
   // ── State transition ───────────────────────────────────────────────────────

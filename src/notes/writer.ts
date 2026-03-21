@@ -1,6 +1,7 @@
 import { App, TFile, normalizePath } from 'obsidian'
 import { wrapMarkdownForVault, type VaultNoteMetadata } from './template'
 import { sanitizeNoteTitle, formatNoteFilename } from '@igggy/types'
+import type { FriendlyErrorResult } from '../commands'
 
 // ── Inline Processing Feedback ────────────────────────────────────────────────
 
@@ -91,35 +92,49 @@ export async function createTextPlaceholder(
 
 /**
  * Sets the placeholder note to an error state when the pipeline fails.
+ * Accepts either a structured FriendlyErrorResult or a plain string for backwards compat.
  */
 export async function setPlaceholderError(
   app: App,
   file: TFile,
   stageName: string,
-  errorMessage: string
+  error: FriendlyErrorResult | string
 ): Promise<void> {
   const currentContent = await app.vault.read(file)
   const frontmatterMatch = currentContent.match(/^---\n[\s\S]*?\n---/)
   const frontmatter = frontmatterMatch ? frontmatterMatch[0] : ''
 
-  const body = [
+  const primary = typeof error === 'string' ? error : error.primary
+  const detail = typeof error === 'string' ? undefined : error.detail
+  const reassurance = typeof error === 'string' ? undefined : error.reassurance
+
+  const bodyLines = [
     '',
     '## Error',
     '',
-    `Igggy encountered an error during ${stageName}.`,
+    primary,
     '',
-    `**What happened**: ${errorMessage}`,
-    '',
+  ]
+
+  if (detail) {
+    bodyLines.push(detail, '')
+  }
+
+  bodyLines.push(
     '**What to try**:',
     '- Check that your API keys are correct in Igggy settings',
     '- Confirm the audio file is a supported format',
     '- Try processing the file again',
     '',
-    '_The audio file has not been modified._',
-    '',
-  ].join('\n')
+  )
 
-  await app.vault.modify(file, frontmatter + body)
+  if (reassurance) {
+    bodyLines.push(`_${reassurance}_`, '')
+  } else {
+    bodyLines.push('_The audio file has not been modified._', '')
+  }
+
+  await app.vault.modify(file, frontmatter + bodyLines.join('\n'))
 }
 
 // ── Recording Placeholder ─────────────────────────────────────────────────────

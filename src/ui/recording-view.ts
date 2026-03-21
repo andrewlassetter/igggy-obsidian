@@ -30,6 +30,7 @@ import {
 } from '../commands'
 import { createRecordingPlaceholder } from '../notes/writer'
 import { CUSTOM_INSTRUCTIONS } from '../feature-flags'
+import { WaveformRenderer } from '@igggy/waveform'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -81,6 +82,7 @@ export class RecordingView extends ItemView {
   // ── Active handles (cancelled in onClose) ──────────────────────────────────
   private timerInterval: ReturnType<typeof setInterval> | null = null
   private rafId = 0
+  private waveformRenderer: WaveformRenderer | null = null
 
   constructor(leaf: WorkspaceLeaf, plugin: IgggyPlugin) {
     super(leaf)
@@ -101,6 +103,8 @@ export class RecordingView extends ItemView {
   async onClose(): Promise<void> {
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
+    this.waveformRenderer?.reset()
+    this.waveformRenderer = null
     // Release microphone if the panel is closed mid-recording
     if (this.session) {
       await this.session.stop()
@@ -237,7 +241,7 @@ export class RecordingView extends ItemView {
 
   private renderActiveRecording(body: HTMLElement): void {
     const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform' })
-    this.startCanvasWaveform(waveformEl)
+    this.startCanvasWaveform(waveformEl, 'recording')
 
     // Silence warning — hidden initially, shown by startCanvasWaveform after 10 s of silence
     const silenceMsg = this.recordingMode === 'both'
@@ -284,11 +288,8 @@ export class RecordingView extends ItemView {
   // ── Paused ─────────────────────────────────────────────────────────────────
 
   private renderPaused(body: HTMLElement): void {
-    // Flat bars reuse existing .igggy-waveform.paused styles from styles.css
-    const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform igggy-waveform paused' })
-    const barsDiv = waveformEl.createDiv({ cls: 'igggy-bars' })
-    const pausedBarCount = Math.floor((body.clientWidth || BAR_COUNT * 5) / 5)
-    for (let i = 0; i < pausedBarCount; i++) barsDiv.createDiv({ cls: 'bar' })
+    const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform' })
+    this.startCanvasWaveform(waveformEl, 'paused')
 
     const footer = body.createDiv({ cls: 'igggy-rv-waveform-footer' })
     const timerEl = footer.createSpan({ cls: 'igggy-rv-timer' })
@@ -355,18 +356,8 @@ export class RecordingView extends ItemView {
   // ── Processing ─────────────────────────────────────────────────────────────
 
   private renderProcessing(body: HTMLElement): void {
-    // Rolling sine-wave animation reuses .igggy-waveform.processing styles
-    const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform igggy-waveform processing' })
-    const barsDiv = waveformEl.createDiv({ cls: 'igggy-bars' })
-    const procBarCount = Math.floor((body.clientWidth || BAR_COUNT * 5) / 5)
-    for (let i = 0; i < procBarCount; i++) {
-      const bar = barsDiv.createDiv({ cls: 'bar' })
-      const delay = -(i / Math.max(procBarCount - 1, 1)) * 2.8
-      bar.style.setProperty('--wave-delay', `${delay.toFixed(3)}s`)
-      // Organic height variation — deterministic per bar (18–28px range)
-      const t = Math.sin(i * 1.7 + 0.3) * 0.5 + 0.5
-      bar.style.setProperty('--wave-peak', `${Math.round(18 + t * 10)}px`)
-    }
+    const waveformEl = body.createDiv({ cls: 'igggy-rv-waveform' })
+    this.startCanvasWaveform(waveformEl, 'processing')
 
     body.createEl('p', {
       text: this.processLabel || 'Processing…',
@@ -398,71 +389,54 @@ export class RecordingView extends ItemView {
       .addEventListener('click', () => this.transition('idle'))
   }
 
-  // ── Canvas waveform (adapted from ui/waveform.ts) ──────────────────────────
+  // ── Canvas waveform (shared renderer for all states) ────────────────────────
 
-  private startCanvasWaveform(container: HTMLElement): void {
-    const analyser = this.session?.getAnalyserNode() ?? null
-
-    // Fallback: show static bars if analyser is unavailable
-    if (!analyser) {
-      const fallbackBarCount = Math.floor((container.clientWidth || BAR_COUNT * 5) / 5)
-      const barsDiv = container.createDiv({ cls: 'igggy-bars' })
-      for (let i = 0; i < fallbackBarCount; i++) barsDiv.createDiv({ cls: 'bar' })
-      return
+  private getRenderer(): WaveformRenderer {
+    if (!this.waveformRenderer) {
+      const accentColor =
+        getComputedStyle(document.body).getPropertyValue('--interactive-accent').trim() ||
+        '#7c6df0'
+      this.waveformRenderer = new WaveformRenderer({ accentColor })
     }
+    return this.waveformRenderer
+  }
+
+  private startCanvasWaveform(container: HTMLElement, mode: 'recording' | 'paused' | 'processing'): void {
+    cancelAnimationFrame(this.rafId)
+    const renderer = this.getRenderer()
 
     const canvas = container.createEl('canvas', { cls: 'igggy-canvas' })
     const canvasWidth = container.clientWidth || BAR_COUNT * 5
     canvas.width = canvasWidth
-    canvas.height = 36
-    const barCount = Math.floor(canvasWidth / 5)
+    canvas.height = 72
+    canvas.style.display = 'block'
+    canvas.style.width = '100%'
 
     const ctx = canvas.getContext('2d')!
-    const freqData = new Uint8Array(analyser.frequencyBinCount)
-    const accentColor =
-      getComputedStyle(document.body).getPropertyValue('--interactive-accent').trim() ||
-      '#7c6df0'
-    const hasRoundRect =
-      typeof (ctx as unknown as { roundRect?: unknown }).roundRect === 'function'
 
+    const analyser = this.session?.getAnalyserNode() ?? null
+    const freqData = analyser ? new Uint8Array(analyser.frequencyBinCount) : null
     const recordingStartMs = Date.now()
 
     const draw = (): void => {
       this.rafId = requestAnimationFrame(draw)
-      analyser.getByteFrequencyData(freqData)
-      ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-      for (let i = 0; i < barCount; i++) {
-        const binIndex = Math.floor((i / barCount) * freqData.length)
-        const normalized = freqData[binIndex] / 255
-        const height = Math.max(3, Math.sqrt(normalized) * 32)
-        const x = i * 5
-        const y = (canvas.height - height) / 2
+      if (mode === 'recording' && analyser && freqData) {
+        analyser.getByteFrequencyData(freqData)
+        const isSilent = renderer.drawRecording(ctx, canvas.width, canvas.height, freqData)
 
-        ctx.fillStyle = accentColor
-        ctx.beginPath()
-        if (hasRoundRect) {
-          ;(ctx as unknown as {
-            roundRect(x: number, y: number, w: number, h: number, r: number): void
-          }).roundRect(x, y, 3, height, 2)
-        } else {
-          ctx.rect(x, y, 3, height)
-        }
-        ctx.fill()
-      }
-
-      // Silence detection — only active after the initial delay AND when mic is not muted
-      if (this.silenceWarningEl && Date.now() - recordingStartMs > SILENCE_DELAY_MS) {
-        if (this.session?.isMuted()) {
-          // User intentionally muted mic — don't warn about silence
-          this.silenceWarningEl.toggleClass('igggy-hidden', true)
-        } else {
-          let maxVal = 0
-          for (let i = 0; i < freqData.length; i++) {
-            if (freqData[i] > maxVal) maxVal = freqData[i]
+        // Silence detection
+        if (this.silenceWarningEl && Date.now() - recordingStartMs > SILENCE_DELAY_MS) {
+          if (this.session?.isMuted()) {
+            this.silenceWarningEl.toggleClass('igggy-hidden', true)
+          } else {
+            this.silenceWarningEl.toggleClass('igggy-hidden', !isSilent)
           }
-          this.silenceWarningEl.toggleClass('igggy-hidden', maxVal >= SILENCE_THRESHOLD)
         }
+      } else if (mode === 'processing') {
+        renderer.drawProcessing(ctx, canvas.width, canvas.height)
+      } else {
+        renderer.drawPaused(ctx, canvas.width, canvas.height)
       }
     }
 

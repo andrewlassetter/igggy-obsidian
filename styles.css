@@ -23,50 +23,10 @@
   border-radius: 4px;
 }
 
-/* ── CSS bars (paused + processing states) ─────────────────────────────────── */
+/* ── Canvas waveform container ─────────────────────────────────────────────── */
 
-.igggy-bars {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 36px;
-}
-
-.igggy-bars .bar {
-  flex: 0 0 3px;
-  border-radius: 99px;
-  background: var(--interactive-accent);
-  height: 3px;
-  min-height: 3px;
-}
-
-/* ── Processing: organic breathing wave ────────────────────────────────────── */
-
-@keyframes igggy-wave {
-  0%, 100% { height: 3px; }
-  30%      { height: var(--wave-peak, 26px); }
-  60%      { height: 6px; }
-}
-
-@keyframes igggy-glow {
-  0%, 100% { opacity: 0.4; }
-  30%      { opacity: 1; }
-  60%      { opacity: 0.5; }
-}
-
-.igggy-waveform.processing .igggy-bars .bar {
-  animation:
-    igggy-wave 2.8s cubic-bezier(0.22, 1, 0.36, 1) infinite,
-    igggy-glow 2.8s ease-in-out infinite;
-  animation-delay: var(--wave-delay, 0s);
-}
-
-/* ── Paused: flat and dimmed ───────────────────────────────────────────────── */
-
-.igggy-waveform.paused .igggy-bars .bar {
-  height: 2px;
-  animation: none;
-  opacity: 0.4;
+.igggy-rv-waveform {
+  padding: 16px 0;
 }
 
 /* ── Footer: timer + label ─────────────────────────────────────────────────── */

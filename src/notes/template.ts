@@ -15,7 +15,11 @@ export interface VaultNoteMetadata {
   embedAudio: boolean
   analysisJson?: string  // JSON-stringified TranscriptAnalysis — stored for regen
   speakersJson?: string  // JSON-stringified SpeakersData — stored for speaker naming
-  noteSource?: string    // 'web' | 'plugin' | etc.
+  noteSource?: string    // 'web' | 'plugin' | 'url' | etc.
+  /** URL source metadata — present for notes created from URL extraction */
+  sourceUrl?: string
+  sourceDomain?: string
+  sourceAuthor?: string
 }
 
 /**
@@ -30,12 +34,16 @@ export function wrapMarkdownForVault(preRenderedMarkdown: string, meta: VaultNot
   const noteType = normalizeNoteType(meta.noteType)
 
   // --- Frontmatter ---
+  const isUrlSource = meta.noteSource === 'url'
   const frontmatterLines = [
     '---',
     `igggy_id: ${meta.igggyId}`,
     `title: "${meta.title}"`,
     `date: ${meta.date}`,
-    'source: igggy',
+    isUrlSource ? 'source: url' : 'source: igggy',
+    ...(isUrlSource && meta.sourceUrl ? [`source_url: ${meta.sourceUrl}`] : []),
+    ...(isUrlSource && meta.sourceDomain ? [`source_domain: ${meta.sourceDomain}`] : []),
+    ...(isUrlSource && meta.sourceAuthor ? [`source_author: "${meta.sourceAuthor}"`] : []),
     `tags: [igggy, ${noteType.toLowerCase()}]`,
     '---',
   ]
@@ -48,6 +56,9 @@ export function wrapMarkdownForVault(preRenderedMarkdown: string, meta: VaultNot
     meta.durationSec != null ? `> duration_sec: ${meta.durationSec}` : null,
     meta.audioPath ? `> audio: "${meta.audioPath}"` : null,
     meta.noteSource ? `> note_source: ${meta.noteSource}` : null,
+    meta.sourceUrl ? `> source_url: ${meta.sourceUrl}` : null,
+    meta.sourceDomain ? `> source_domain: ${meta.sourceDomain}` : null,
+    meta.sourceAuthor ? `> source_author: ${meta.sourceAuthor}` : null,
     meta.noteId ? `> note_id: ${meta.noteId}` : null,
     meta.speakersJson ? `> speakers: '${meta.speakersJson.replace(/'/g, "''")}'` : null,
     meta.analysisJson ? `> analysis: '${meta.analysisJson.replace(/'/g, "''")}'` : null,

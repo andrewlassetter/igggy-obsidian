@@ -1,10 +1,12 @@
 import tsParser from '@typescript-eslint/parser'
+import tsPlugin from '@typescript-eslint/eslint-plugin'
 import obsidianmd from 'eslint-plugin-obsidianmd'
 
 export default [
   {
     files: ['src/**/*.ts'],
     plugins: {
+      '@typescript-eslint': tsPlugin,
       obsidianmd,
     },
     languageOptions: {

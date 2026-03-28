@@ -5,8 +5,8 @@
 ## Commands
 
 ```bash
-npm run dev       # builds @igggy/types, then esbuild in watch mode — auto-rebuilds to main.js on save
-npm run build     # builds @igggy/types, tsc type-check + esbuild production bundle (no sourcemaps)
+npm run dev       # esbuild in watch mode — auto-rebuilds to main.js on save
+npm run build     # tsc type-check + esbuild production bundle (no sourcemaps) + check:no-core
 npm run lint      # eslint on src/ (TypeScript)
 ```
 
@@ -17,6 +17,15 @@ npm run lint      # eslint on src/ (TypeScript)
 - **Install in Obsidian for testing** — symlink or copy the repo into `<vault>/.obsidian/plugins/igggy/`; enable the plugin in Obsidian → Settings → Community plugins
 - **Rebuild required** — Obsidian does not hot-reload plugins; after `npm run dev` rebuilds, use the "Reload app without saving" command in Obsidian (or disable/re-enable the plugin)
 - **Desktop only** — `isDesktopOnly: true` in `manifest.json`; mobile Obsidian will not load this plugin
+- **Shared packages from npm** — `@igggy/types` and `@igggy/waveform` are installed from npm (public). To develop against local changes in `igggy-web`, use `npm link`:
+  ```bash
+  # Link local packages (one-time setup):
+  cd ../igggy-web/packages/types && npm link
+  cd ../igggy-web/packages/waveform && npm link
+  cd ../igggy-obsidian && npm link @igggy/types @igggy/waveform
+  # Revert to npm versions:
+  npm install
+  ```
 
 ## Architecture
 

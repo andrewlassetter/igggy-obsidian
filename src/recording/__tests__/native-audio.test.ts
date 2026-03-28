@@ -23,9 +23,17 @@ vi.mock('os', () => ({
 import { NativeAudioCapture } from '../native-audio'
 
 describe('NativeAudioCapture', () => {
+  const originalPlatform = process.platform
+
   beforeEach(() => {
     vi.clearAllMocks()
     mockProcess.exitCode = null
+    // Tests assume macOS — mock platform for CI (Linux)
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
   })
 
   describe('isSupported', () => {

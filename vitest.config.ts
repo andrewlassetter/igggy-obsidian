@@ -14,4 +14,9 @@ export default defineConfig({
       obsidian: resolve(__dirname, 'src/__mocks__/obsidian.ts'),
     },
   },
+  // Ensure npm-published @igggy packages are resolved correctly in tests
+  // (vitest may fail to resolve them in CI without this)
+  optimizeDeps: {
+    include: ['@igggy/types'],
+  },
 })

@@ -71,6 +71,7 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `../igggy-web/docs/contracts/api-endpoints.md` | Request/response contracts for endpoints this plugin consumes |
 | `../igggy-web/docs/contracts/settings-parity.md` | Settings that must exist on both platforms, defaults, known gaps |
 | `../igggy-web/docs/contracts/search.md` | FTS vector update invariant, search query format, vector must be updated after all note mutations |
+| `../igggy-web/docs/contracts/auth.md` | Plugin auth (all modes require sign-in), token refresh, validateKeys gate, error message differentiation |
 | `../igggy-web/docs/contracts/sync.md` | Immutable note model, insert-only push, create-only pull, igggyId as sync key, note source tracking |
 
 ## Feature Flags
@@ -85,6 +86,7 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `CUSTOM_INSTRUCTIONS` | `false` | Hides custom instructions textarea in recording view (idle + stopped) and regeneration modal. Pipeline still accepts `customPrompt`. Hidden to reduce complexity at launch. |
 
 **Scope — which files trigger which contracts:**
+- `src/auth.ts`, `src/api/igggy-client.ts`, `src/pipelines/helpers.ts` → `auth.md`
 - `src/api/igggy-client.ts` → `api-endpoints.md`
 - `src/notes/template.ts`, `src/notes/parser.ts`, `src/notes/writer.ts`, `src/commands.ts` (frontmatter reads/writes) → `frontmatter.md`
 - `src/settings.ts`, `src/settings-tab.ts` → `settings-parity.md`

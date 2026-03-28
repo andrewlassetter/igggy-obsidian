@@ -1,7 +1,7 @@
 import { Notice, normalizePath } from 'obsidian'
 import type { SyncPayload } from '@igggy/types'
 import type IgggyPlugin from '../main'
-import { createClient } from '../commands'
+import { createClient } from '../auth'
 import { IgggyApiError } from '../api/igggy-client'
 import { drainPendingSyncs, pullFromCloud } from './pull'
 

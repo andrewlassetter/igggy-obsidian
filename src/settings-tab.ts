@@ -1,9 +1,89 @@
-import { App, PluginSettingTab, Setting } from 'obsidian'
+import { App, PluginSettingTab, Setting, AbstractInputSuggest, TFolder } from 'obsidian'
 import type IgggyPlugin from './main'
 import { reindexVault } from './sync/reindex'
 import { TASKS_ENABLED } from './feature-flags'
 
+// ── Vault folder suggest ──────────────────────────────────────────────────────
+
+/**
+ * Input suggest that shows all vault folders on focus and filters as you type.
+ * Standard Obsidian pattern used by Templater, Daily Notes, etc.
+ */
+class FolderSuggest extends AbstractInputSuggest<TFolder> {
+  getSuggestions(query: string): TFolder[] {
+    const folders = this.app.vault.getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder)
+      .filter((f) => f.path !== '/') // exclude vault root
+      .sort((a, b) => a.path.localeCompare(b.path))
+
+    if (!query) return folders
+    const lower = query.toLowerCase()
+    return folders.filter((f) => f.path.toLowerCase().includes(lower))
+  }
+
+  renderSuggestion(folder: TFolder, el: HTMLElement): void {
+    el.setText(folder.path)
+  }
+
+  selectSuggestion(folder: TFolder): void {
+    this.setValue(folder.path)
+    this.close()
+  }
+}
+
 const APP_URL = 'https://app.igggy.ai'
+
+// ── Format validators ─────────────────────────────────────────────────────────
+
+function validateOpenAIKey(value: string): string | null {
+  if (!value.startsWith('sk-') || value.length < 40) {
+    return "This doesn't look like a valid OpenAI key — should start with sk- and be 40+ characters."
+  }
+  return null
+}
+
+function validateDeepgramKey(value: string): string | null {
+  if (value.length < 32) {
+    return "This doesn't look like a valid Deepgram key — should be 32+ characters."
+  }
+  return null
+}
+
+function validateAnthropicKey(value: string): string | null {
+  if (!value.startsWith('sk-ant-') || value.length < 40) {
+    return "This doesn't look like a valid Anthropic key — should start with sk-ant- and be 40+ characters."
+  }
+  return null
+}
+
+function sanitizeFolder(value: string): string {
+  const sanitized = value.trim().replace(/^\/+/, '').replace(/\.\.\//g, '').replace(/\.\.$/, '')
+  return sanitized || 'Igggy'
+}
+
+/** Decode email from a Supabase JWT access token. Returns null on any error. */
+function decodeEmail(token: string): string | null {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return typeof payload?.email === 'string' ? payload.email : null
+  } catch {
+    return null
+  }
+}
+
+// ── Confirmable field config ──────────────────────────────────────────────────
+
+interface ConfirmableFieldConfig {
+  name: string
+  desc: string
+  settingsKey: keyof IgggyPlugin['settings']
+  isPassword: boolean
+  placeholder: string
+  validate?: (value: string) => string | null
+  sanitize?: (value: string) => string
+  /** Attach vault folder suggest to the text input (shows all folders on focus, filters on type) */
+  folderSuggest?: boolean
+}
 
 export class IgggySettingsTab extends PluginSettingTab {
   plugin: IgggyPlugin
@@ -13,16 +93,150 @@ export class IgggySettingsTab extends PluginSettingTab {
     this.plugin = plugin
   }
 
+  /**
+   * Renders a setting field with explicit edit → save → confirm flow.
+   *
+   * Three states:
+   * - Empty: editable input + Save button (first-time setup)
+   * - Display: shows current value (masked for passwords) + Edit button
+   * - Editing: input + Save + Cancel buttons
+   */
+  private addConfirmableField(containerEl: HTMLElement, config: ConfirmableFieldConfig): void {
+    const currentValue = this.plugin.settings[config.settingsKey] as string
+    const hasValue = !!currentValue
+
+    const setting = new Setting(containerEl)
+      .setName(config.name)
+      .setDesc(config.desc)
+
+    if (!hasValue) {
+      // ── Empty state: show input + Save directly ─────────────────────
+      let inputValue = ''
+
+      setting.addText((text) => {
+        if (config.isPassword) text.inputEl.type = 'password'
+        text.setPlaceholder(config.placeholder)
+        text.onChange((value) => { inputValue = value })
+        if (config.folderSuggest) new FolderSuggest(this.app, text.inputEl)
+      })
+
+      setting.addButton((btn) =>
+        btn.setButtonText('Save').setCta().onClick(async () => {
+          const trimmed = inputValue.trim()
+          if (!trimmed) return
+          const finalValue = config.sanitize ? config.sanitize(trimmed) : trimmed;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(this.plugin.settings as any)[config.settingsKey] = finalValue
+          await this.plugin.saveSettings()
+
+          // Show validation warning if applicable
+          const warning = config.validate?.(finalValue)
+          if (warning) {
+            const warningEl = setting.descEl.createEl('div', {
+              text: warning,
+              cls: 'mod-warning',
+            })
+            warningEl.style.color = 'var(--text-warning)'
+            warningEl.style.marginTop = '4px'
+            warningEl.style.fontSize = '11px'
+          }
+
+          // Flash confirmation and rebuild
+          this.showSavedConfirmation(setting, () => this.display())
+        })
+      )
+    } else {
+      // ── Display state: show value + Edit button ─────────────────────
+      const displayValue = config.isPassword ? '••••••••' : currentValue
+
+      setting.addText((text) => {
+        text.setValue(displayValue)
+        text.setDisabled(true)
+        text.inputEl.style.opacity = '0.7'
+      })
+
+      setting.addButton((btn) =>
+        btn.setButtonText('Edit').onClick(() => {
+          // ── Edit state: replace with editable input + Save/Cancel ────
+          setting.clear()
+          setting.setName(config.name).setDesc(config.desc)
+
+          let inputValue = ''
+          setting.addText((text) => {
+            if (config.isPassword) {
+              text.inputEl.type = 'password'
+              text.setPlaceholder('Paste new key')
+            } else {
+              text.setValue(currentValue)
+              text.setPlaceholder(config.placeholder)
+            }
+            text.onChange((value) => { inputValue = value })
+            // For non-password fields, initialize with current value
+            if (!config.isPassword) inputValue = currentValue
+            if (config.folderSuggest) new FolderSuggest(this.app, text.inputEl)
+          })
+
+          setting.addButton((saveBtn) =>
+            saveBtn.setButtonText('Save').setCta().onClick(async () => {
+              const trimmed = inputValue.trim()
+              if (!trimmed) return
+              const finalValue = config.sanitize ? config.sanitize(trimmed) : trimmed;
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ;(this.plugin.settings as any)[config.settingsKey] = finalValue
+              await this.plugin.saveSettings()
+
+              const warning = config.validate?.(finalValue)
+              if (warning) {
+                const warningEl = setting.descEl.createEl('div', {
+                  text: warning,
+                  cls: 'mod-warning',
+                })
+                warningEl.style.color = 'var(--text-warning)'
+                warningEl.style.marginTop = '4px'
+                warningEl.style.fontSize = '11px'
+              }
+
+              this.showSavedConfirmation(setting, () => this.display())
+            })
+          )
+
+          setting.addExtraButton((cancelBtn) =>
+            cancelBtn
+              .setIcon('cross')
+              .setTooltip('Cancel')
+              .onClick(() => this.display())
+          )
+        })
+      )
+    }
+  }
+
+  /** Flash "Saved ✓" on a setting, then call the callback */
+  private showSavedConfirmation(setting: Setting, then: () => void): void {
+    const el = setting.nameEl
+    const original = el.textContent
+    el.textContent = 'Saved ✓'
+    el.style.color = 'var(--text-success)'
+    setTimeout(() => {
+      el.textContent = original
+      el.style.color = ''
+      then()
+    }, 1500)
+  }
+
   display(): void {
     const { containerEl } = this
     containerEl.empty()
+
+    // ── Account (unified for all modes) ─────────────────────────────
+    this.renderAccountSection(containerEl)
 
     // ── Connection mode ────────────────────────────────────────────
     new Setting(containerEl).setName('Connection mode').setHeading()
 
     new Setting(containerEl)
       .setName('Mode')
-      .setDesc('Igggy Open: Use your own API keys. Starter/Pro: Managed keys (requires account).')
+      .setDesc('Igggy Open: Use your own API keys. Starter/Pro: Managed keys.')
       .addDropdown((dd) => {
         dd
           .addOption('open', 'Igggy Open — bring your own keys')
@@ -78,20 +292,15 @@ export class IgggySettingsTab extends PluginSettingTab {
     // ── Output (always visible) ────────────────────────────────────
     new Setting(containerEl).setName('Output').setHeading()
 
-    new Setting(containerEl)
-      .setName('Output folder')
-      .setDesc("Vault folder where notes are saved. Created automatically if it doesn't exist. Use a synced vault path (Obsidian Sync, iCloud, Dropbox) to access notes across devices.")
-      .addText((text) =>
-        text
-          .setPlaceholder('Igggy')
-          .setValue(this.plugin.settings.outputFolder)
-          .onChange(async (value) => {
-            // Sanitize: strip leading slashes and path traversal
-            const sanitized = value.trim().replace(/^\/+/, '').replace(/\.\.\//g, '').replace(/\.\.$/, '')
-            this.plugin.settings.outputFolder = sanitized || 'Igggy'
-            await this.plugin.saveSettings()
-          })
-      )
+    this.addConfirmableField(containerEl, {
+      name: 'Output folder',
+      desc: "Vault folder where notes are saved. Created automatically if it doesn't exist.",
+      settingsKey: 'outputFolder',
+      isPassword: false,
+      placeholder: 'Igggy',
+      sanitize: sanitizeFolder,
+      folderSuggest: true,
+    })
 
     new Setting(containerEl)
       .setName('Embed audio link in note')
@@ -156,86 +365,102 @@ export class IgggySettingsTab extends PluginSettingTab {
       })
   }
 
-  private renderPaidSection(containerEl: HTMLElement): void {
+  private renderAccountSection(containerEl: HTMLElement): void {
     const { settings } = this.plugin
-    const isConnected = !!settings.accessToken && !!settings.refreshToken
+    const isSignedIn = !!settings.accessToken
 
-    // Show connection status
-    new Setting(containerEl)
-      .setName(isConnected ? 'Connected' : 'Not connected')
-      .setDesc(
-        isConnected
-          ? 'Paste fresh tokens any time to re-authenticate.'
-          : 'Open the Igggy web app and copy your session tokens.'
-      )
-      .addButton((btn) =>
-        btn
-          .setButtonText('Open Igggy →')
-          .onClick(() => {
-            window.open(`${APP_URL}/auth/plugin-callback`, '_blank')
-          })
-      )
+    new Setting(containerEl).setName('Account').setHeading()
 
-    // Access token field
-    new Setting(containerEl)
-      .setName('Access token')
-      .setDesc('Paste the access token from the Igggy plugin-callback page.')
-      .addText((text) =>
-        text
-          .setPlaceholder('eyJ…')
-          .setValue(settings.accessToken ? '••••••••' : '')
-          .onChange(async (value) => {
-            if (!value || value === '••••••••') return
-            this.plugin.settings.accessToken = value.trim()
-            // Decode expiry from JWT payload (exp is in seconds)
-            try {
-              const payload = JSON.parse(atob(value.split('.')[1]))
-              this.plugin.settings.tokenExpiry = (payload.exp as number) * 1000
-            } catch {
-              this.plugin.settings.tokenExpiry = 0
-            }
+    if (isSignedIn) {
+      // ── Signed in state ───────────────────────────────────────────
+      const email = decodeEmail(settings.accessToken)
+      new Setting(containerEl)
+        .setName(email ? `Connected — ${email}` : 'Connected')
+        .setDesc('Your Igggy account is linked. Notes are stored and synced automatically.')
+        .addButton((btn) =>
+          btn.setButtonText('Sign out').onClick(async () => {
+            this.plugin.settings.accessToken = ''
+            this.plugin.settings.refreshToken = ''
+            this.plugin.settings.tokenExpiry = 0
             await this.plugin.saveSettings()
             this.display()
           })
-      )
-
-    // Refresh token field
-    new Setting(containerEl)
-      .setName('Refresh token')
-      .setDesc('Paste the refresh token from the Igggy plugin-callback page.')
-      .addText((text) =>
-        text
-          .setPlaceholder('Paste refresh token')
-          .setValue(settings.refreshToken ? '••••••••' : '')
-          .onChange(async (value) => {
-            if (!value || value === '••••••••') return
-            this.plugin.settings.refreshToken = value.trim()
-            await this.plugin.saveSettings()
-          })
-      )
-
-    // Disconnect button (only shown when connected)
-    if (isConnected) {
-      new Setting(containerEl)
-        .setName('Disconnect')
-        .setDesc('Remove stored tokens and return to Igggy Open.')
-        .addButton((btn) =>
-          btn
-            .setButtonText('Disconnect')
-            .setWarning()
-            .onClick(async () => {
-              this.plugin.settings.accessToken = ''
-              this.plugin.settings.refreshToken = ''
-              this.plugin.settings.tokenExpiry = 0
-              this.plugin.settings.mode = 'open'
-              await this.plugin.saveSettings()
-              this.display()
-            })
         )
+
+      // Style the name green
+      const nameEl = containerEl.querySelector('.setting-item:last-child .setting-item-name')
+      if (nameEl instanceof HTMLElement) nameEl.style.color = 'var(--text-success)'
+    } else {
+      // ── Not signed in state ───────────────────────────────────────
+      new Setting(containerEl)
+        .setName('Sign in to start using Igggy')
+        .setDesc('Your free account stores notes and enables cross-device sync.')
+        .addButton((btn) =>
+          btn.setButtonText('Sign in to Igggy').setCta().onClick(() => {
+            window.open(`${APP_URL}/auth/plugin-callback`, '_blank')
+          })
+        )
+
+      containerEl.createEl('p', {
+        text: 'After signing in, copy the two tokens from the callback page and paste them below.',
+        cls: 'setting-item-description',
+      })
+
+      // Access token — sanitize also decodes JWT expiry as a side effect
+      this.addConfirmableField(containerEl, {
+        name: 'Access token',
+        desc: 'Paste the access token from the callback page.',
+        settingsKey: 'accessToken',
+        isPassword: true,
+        placeholder: 'eyJ…',
+        sanitize: (value) => {
+          const trimmed = value.trim()
+          // Decode expiry from JWT payload (exp is in seconds)
+          try {
+            const payload = JSON.parse(atob(trimmed.split('.')[1]))
+            this.plugin.settings.tokenExpiry = typeof payload?.exp === 'number'
+              ? payload.exp * 1000
+              : 0
+          } catch {
+            this.plugin.settings.tokenExpiry = 0
+          }
+          return trimmed
+        },
+      })
+
+      this.addConfirmableField(containerEl, {
+        name: 'Refresh token',
+        desc: 'Paste the refresh token from the callback page.',
+        settingsKey: 'refreshToken',
+        isPassword: true,
+        placeholder: 'Paste refresh token',
+      })
     }
   }
 
+  private renderPaidSection(containerEl: HTMLElement): void {
+    // Token fields are now in the Account section — Starter/Pro only needs
+    // a note that managed keys are active (no API key fields needed)
+    containerEl.createEl('p', {
+      text: 'Managed keys are active — Igggy handles transcription and summarization for you.',
+      cls: 'setting-item-description',
+    })
+  }
+
   private renderOpenSection(containerEl: HTMLElement): void {
+    const { settings } = this.plugin
+    const needsDeepgram = settings.transcriptionProvider === 'deepgram'
+    const needsOpenAI = settings.transcriptionProvider === 'openai' || settings.summarizationProvider === 'openai'
+    const needsAnthropic = settings.summarizationProvider === 'anthropic'
+
+    // Setup path helper text
+    containerEl.createEl('p', {
+      text: needsDeepgram || needsAnthropic
+        ? 'Using Deepgram + Anthropic for best quality (speaker detection + Claude Sonnet). Or switch both providers to OpenAI for a simpler single-key setup.'
+        : 'Using OpenAI for both transcription and summarization — only one API key needed. For better quality with multi-speaker recordings, switch to Deepgram + Anthropic.',
+      cls: 'setting-item-description',
+    })
+
     // BYOK transparency note
     containerEl.createEl('p', {
       text: 'Your API keys are sent securely per-request and immediately discarded \u2014 never stored on our servers, never logged.',
@@ -252,40 +477,13 @@ export class IgggySettingsTab extends PluginSettingTab {
         dd
           .addOption('openai', 'OpenAI Whisper')
           .addOption('deepgram', 'Deepgram Nova-3')
-          .setValue(this.plugin.settings.transcriptionProvider)
+          .setValue(settings.transcriptionProvider)
           .onChange(async (value) => {
             this.plugin.settings.transcriptionProvider = value as 'openai' | 'deepgram'
             await this.plugin.saveSettings()
+            this.display()
           })
       )
-
-    new Setting(containerEl)
-      .setName('OpenAI API key')
-      .setDesc('Used for Whisper transcription and/or GPT-4o summarization.')
-      .addText((text) => {
-        text.inputEl.type = 'password'
-        text
-          .setPlaceholder('Paste your key')
-          .setValue(this.plugin.settings.openaiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.openaiKey = value.trim()
-            await this.plugin.saveSettings()
-          })
-      })
-
-    new Setting(containerEl)
-      .setName('Deepgram API key')
-      .setDesc('Required when using Deepgram as the transcription provider.')
-      .addText((text) => {
-        text.inputEl.type = 'password'
-        text
-          .setPlaceholder('Paste your key')
-          .setValue(this.plugin.settings.deepgramKey)
-          .onChange(async (value) => {
-            this.plugin.settings.deepgramKey = value.trim()
-            await this.plugin.saveSettings()
-          })
-      })
 
     // ── Summarization ──────────────────────────────────────────────
     new Setting(containerEl).setName('Summarization').setHeading()
@@ -297,25 +495,50 @@ export class IgggySettingsTab extends PluginSettingTab {
         dd
           .addOption('openai', 'GPT-4o Mini')
           .addOption('anthropic', 'Claude Sonnet')
-          .setValue(this.plugin.settings.summarizationProvider)
+          .setValue(settings.summarizationProvider)
           .onChange(async (value) => {
             this.plugin.settings.summarizationProvider = value as 'openai' | 'anthropic'
             await this.plugin.saveSettings()
+            this.display()
           })
       )
 
-    new Setting(containerEl)
-      .setName('Anthropic API key')
-      .setDesc('Required when using Claude as the summarization provider.')
-      .addText((text) => {
-        text.inputEl.type = 'password'
-        text
-          .setPlaceholder('Paste your key')
-          .setValue(this.plugin.settings.anthropicKey)
-          .onChange(async (value) => {
-            this.plugin.settings.anthropicKey = value.trim()
-            await this.plugin.saveSettings()
-          })
+    // ── API keys (only show what's needed) ──────────────────────────
+    new Setting(containerEl).setName('API keys').setHeading()
+
+    if (needsOpenAI) {
+      this.addConfirmableField(containerEl, {
+        name: 'OpenAI API key',
+        desc: needsDeepgram || needsAnthropic
+          ? 'Used for GPT-4o summarization.'
+          : 'Used for both Whisper transcription and GPT-4o summarization.',
+        settingsKey: 'openaiKey',
+        isPassword: true,
+        placeholder: 'Paste your key',
+        validate: validateOpenAIKey,
       })
+    }
+
+    if (needsDeepgram) {
+      this.addConfirmableField(containerEl, {
+        name: 'Deepgram API key',
+        desc: 'Used for Nova-3 transcription with speaker detection.',
+        settingsKey: 'deepgramKey',
+        isPassword: true,
+        placeholder: 'Paste your key',
+        validate: validateDeepgramKey,
+      })
+    }
+
+    if (needsAnthropic) {
+      this.addConfirmableField(containerEl, {
+        name: 'Anthropic API key',
+        desc: 'Used for Claude Sonnet summarization.',
+        settingsKey: 'anthropicKey',
+        isPassword: true,
+        placeholder: 'Paste your key',
+        validate: validateAnthropicKey,
+      })
+    }
   }
 }

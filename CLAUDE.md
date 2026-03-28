@@ -5,10 +5,27 @@
 ## Commands
 
 ```bash
-npm run dev       # builds @igggy/types, then esbuild in watch mode — auto-rebuilds to main.js on save
-npm run build     # builds @igggy/types, tsc type-check + esbuild production bundle (no sourcemaps)
+npm run dev       # esbuild in watch mode — auto-rebuilds to main.js on save
+npm run build     # tsc type-check + esbuild production bundle (no sourcemaps) + check:no-core
 npm run lint      # eslint on src/ (TypeScript)
 ```
+
+## CI Verification
+
+Before pushing or reporting work as complete, run:
+
+```bash
+npm run check    # lint + test + build (mirrors CI pipeline)
+```
+
+When `package-lock.json` has changed, also verify with `npm ci` (stricter than `npm install` — fails on lock file mismatches, same as CI).
+
+When changing ESLint config, grep for inline `eslint-disable` directives that reference plugins you need to register:
+```bash
+grep -rn "eslint-disable.*@typescript-eslint" src/
+```
+
+When publishing `@igggy/types` or `@igggy/waveform` to npm, always include an `exports` field in `package.json` (required for ESM resolution in vitest/vite).
 
 ## Dev Environment
 
@@ -17,6 +34,15 @@ npm run lint      # eslint on src/ (TypeScript)
 - **Install in Obsidian for testing** — symlink or copy the repo into `<vault>/.obsidian/plugins/igggy/`; enable the plugin in Obsidian → Settings → Community plugins
 - **Rebuild required** — Obsidian does not hot-reload plugins; after `npm run dev` rebuilds, use the "Reload app without saving" command in Obsidian (or disable/re-enable the plugin)
 - **Desktop only** — `isDesktopOnly: true` in `manifest.json`; mobile Obsidian will not load this plugin
+- **Shared packages from npm** — `@igggy/types` and `@igggy/waveform` are installed from npm (public). To develop against local changes in `igggy-web`, use `npm link`:
+  ```bash
+  # Link local packages (one-time setup):
+  cd ../igggy-web/packages/types && npm link
+  cd ../igggy-web/packages/waveform && npm link
+  cd ../igggy-obsidian && npm link @igggy/types @igggy/waveform
+  # Revert to npm versions:
+  npm install
+  ```
 
 ## Architecture
 
@@ -62,6 +88,7 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `../igggy-web/docs/contracts/api-endpoints.md` | Request/response contracts for endpoints this plugin consumes |
 | `../igggy-web/docs/contracts/settings-parity.md` | Settings that must exist on both platforms, defaults, known gaps |
 | `../igggy-web/docs/contracts/search.md` | FTS vector update invariant, search query format, vector must be updated after all note mutations |
+| `../igggy-web/docs/contracts/auth.md` | Plugin auth (all modes require sign-in), token refresh, validateKeys gate, error message differentiation |
 | `../igggy-web/docs/contracts/sync.md` | Immutable note model, insert-only push, create-only pull, igggyId as sync key, note source tracking |
 
 ## Feature Flags
@@ -76,6 +103,7 @@ Structured documentation of product invariants and behavioral rules. Lives in `.
 | `CUSTOM_INSTRUCTIONS` | `false` | Hides custom instructions textarea in recording view (idle + stopped) and regeneration modal. Pipeline still accepts `customPrompt`. Hidden to reduce complexity at launch. |
 
 **Scope — which files trigger which contracts:**
+- `src/auth.ts`, `src/api/igggy-client.ts`, `src/pipelines/helpers.ts` → `auth.md`
 - `src/api/igggy-client.ts` → `api-endpoints.md`
 - `src/notes/template.ts`, `src/notes/parser.ts`, `src/notes/writer.ts`, `src/commands.ts` (frontmatter reads/writes) → `frontmatter.md`
 - `src/settings.ts`, `src/settings-tab.ts` → `settings-parity.md`
@@ -102,4 +130,5 @@ If a change introduces a new external service, upgrades a tier, adds usage-based
 |---|---|
 | `SERVICES.md` | Third-party services registry with rationale |
 | (no `STATUS.md`)  | Status tracked in web app repo: `igggy/docs/STATUS.md` — single source of truth for both |
+| `2026-03-27 - Code Review.md` | First 5-discipline code review (71 tests, 5 priorities — ESLint broken, commands.ts god file, sync payload duplication) |
 | `2026-03-06 - Obsidian Plugin UI Design Research.md` | Obsidian plugin UI capabilities: extension points, CSS variables, built-in components, design guidelines |

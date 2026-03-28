@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(),
@@ -13,6 +13,8 @@ import { BinaryManager } from '../binary-manager'
 const mockRequestUrl = vi.fn()
 
 describe('BinaryManager', () => {
+  const originalPlatform = process.platform
+
   const defaultOpts = {
     pluginDir: '/vault/.obsidian/plugins/igggy',
     overridePath: '',
@@ -22,6 +24,12 @@ describe('BinaryManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    // Tests assume macOS — mock platform for CI (Linux)
+    Object.defineProperty(process, 'platform', { value: 'darwin', configurable: true })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: originalPlatform, configurable: true })
   })
 
   describe('getBinaryPath', () => {

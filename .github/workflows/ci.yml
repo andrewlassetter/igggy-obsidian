@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: Lint, Test, Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Check out igggy-web alongside for file: dependencies
+      # (@igggy/types and @igggy/waveform reference ../igggy-web/packages/*)
+      - uses: actions/checkout@v4
+        with:
+          repository: andrewlassetter/igggy-web
+          path: ../igggy-web
+          token: ${{ secrets.IGGGY_WEB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Install igggy-web package dependencies for types + waveform builds
+      - name: Install igggy-web packages
+        run: |
+          cd ../igggy-web/packages/types && npm ci
+          cd ../waveform && npm ci
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build types
+        run: npm run build:types
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: tsc -noEmit -skipLibCheck && node esbuild.config.mjs production && npm run check:no-core

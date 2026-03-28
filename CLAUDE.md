@@ -102,4 +102,5 @@ If a change introduces a new external service, upgrades a tier, adds usage-based
 |---|---|
 | `SERVICES.md` | Third-party services registry with rationale |
 | (no `STATUS.md`)  | Status tracked in web app repo: `igggy/docs/STATUS.md` — single source of truth for both |
+| `2026-03-27 - Code Review.md` | First 5-discipline code review (71 tests, 5 priorities — ESLint broken, commands.ts god file, sync payload duplication) |
 | `2026-03-06 - Obsidian Plugin UI Design Research.md` | Obsidian plugin UI capabilities: extension points, CSS variables, built-in components, design guidelines |

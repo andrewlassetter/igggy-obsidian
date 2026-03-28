@@ -12,6 +12,12 @@
  *
  * Result: 1-hour meeting ~57MB → ~14MB with no transcription quality loss
  * (Whisper internally works at 16kHz mono regardless of input quality).
+ *
+ * NOTE: mixToMono(), downsample(), and encodeMp3() run on the main Electron thread.
+ * For very large files (50MB+), this may block the Obsidian UI for several seconds.
+ * If users report UI freezing during "Pre-processing audio…", consider moving the
+ * MP3 encoding to a Web Worker (requires bundling lamejs separately and postMessage
+ * for PCM data transfer). See 2026-03-27 Code Review for context.
  */
 
 import { Mp3Encoder } from '@breezystack/lamejs'

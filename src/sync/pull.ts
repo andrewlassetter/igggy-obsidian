@@ -2,7 +2,7 @@ import { Notice, TFile, normalizePath } from 'obsidian'
 import { normalizeNoteType, formatNoteFilename } from '@igggy/types'
 import type { PullSyncNote } from '@igggy/types'
 import type IgggyPlugin from '../main'
-import { createClient, getAuthToken } from '../commands'
+import { createClient } from '../auth'
 import { generateMarkdownFromContent } from '../notes/template-legacy'
 import type { LegacyNoteTemplateData } from '../notes/template-legacy'
 

@@ -44,6 +44,7 @@ export class IgggyClient {
       method: 'PUT',
       body: buffer,
       headers: { 'Content-Type': contentType },
+      throw: false,
     })
 
     if (res.status >= 300) {
@@ -113,6 +114,19 @@ export class IgggyClient {
     return this.request('POST', path, body) as Promise<T>
   }
 
+  /**
+   * Safely access res.json — Obsidian's requestUrl throws SyntaxError
+   * when the response body is empty or non-JSON (e.g. S3 XML errors,
+   * empty 401/204 responses). Returns undefined instead of throwing.
+   */
+  private safeJson(res: { json: unknown; text: string }): unknown {
+    try {
+      return res.json
+    } catch {
+      return undefined
+    }
+  }
+
   private async request(method: string, path: string, body?: unknown): Promise<unknown> {
     const token = await this.getToken()
 
@@ -133,7 +147,7 @@ export class IgggyClient {
     }
 
     if (res.status === 402) {
-      const data = res.json as { error?: string; freeRecordingsUsed?: number }
+      const data = this.safeJson(res) as { error?: string; freeRecordingsUsed?: number } | undefined
       throw new IgggyApiError(
         data?.error ?? 'Free recordings used up — upgrade your Igggy plan at app.igggy.ai',
         'UPGRADE_REQUIRED',
@@ -142,7 +156,7 @@ export class IgggyClient {
     }
 
     if (res.status === 429) {
-      const data = res.json as { retryAfterSec?: number }
+      const data = this.safeJson(res) as { retryAfterSec?: number } | undefined
       throw new IgggyApiError(
         `Rate limit exceeded — try again in ${data?.retryAfterSec ?? 60} seconds.`,
         'RATE_LIMITED',
@@ -151,7 +165,7 @@ export class IgggyClient {
     }
 
     if (res.status < 200 || res.status >= 300) {
-      const data = res.json as { error?: string; code?: string } | undefined
+      const data = this.safeJson(res) as { error?: string; code?: string } | undefined
       throw new IgggyApiError(
         data?.error ?? `Request failed (${res.status})`,
         data?.code ?? 'UNKNOWN',
@@ -162,7 +176,7 @@ export class IgggyClient {
     // DELETE returns no body
     if (method === 'DELETE') return undefined
 
-    return res.json
+    return this.safeJson(res)
   }
 }
 

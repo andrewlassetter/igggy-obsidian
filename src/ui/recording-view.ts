@@ -48,6 +48,7 @@ function iconButton(parent: HTMLElement, icon: string, text: string, cls: string
 const BAR_COUNT = 28
 const SILENCE_THRESHOLD = 5      // max bin value (0–255) below which we consider it silence
 const SILENCE_DELAY_MS = 10_000  // wait 10 s after recording starts before checking
+const SILENCE_SUSTAIN_MS = 10_000 // require 10 s of continuous silence before showing warning
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ export class RecordingView extends ItemView {
   private recordingMode: RecordingMode = 'mic'  // set from settings at recording start
   private session: RecordingSession | null = null
   private silenceWarningEl: HTMLElement | null = null
+  private silenceSinceMs: number | null = null  // timestamp when continuous silence began
   private blob: Blob | null = null
   private placeholderFile: TFile | null = null
   private finalElapsed = 0
@@ -425,12 +427,21 @@ export class RecordingView extends ItemView {
         analyser.getByteFrequencyData(freqData)
         const isSilent = renderer.drawRecording(ctx, canvas.width, canvas.height, freqData)
 
-        // Silence detection
+        // Silence detection — require sustained silence before showing warning
         if (this.silenceWarningEl && Date.now() - recordingStartMs > SILENCE_DELAY_MS) {
           if (this.session?.isMuted()) {
             this.silenceWarningEl.toggleClass('igggy-hidden', true)
+            this.silenceSinceMs = null
+          } else if (!isSilent) {
+            // Audio detected — hide warning and reset silence timer
+            this.silenceWarningEl.toggleClass('igggy-hidden', true)
+            this.silenceSinceMs = null
           } else {
-            this.silenceWarningEl.toggleClass('igggy-hidden', !isSilent)
+            // Silent frame — start or continue tracking continuous silence
+            const now = Date.now()
+            if (this.silenceSinceMs === null) this.silenceSinceMs = now
+            const sustained = now - this.silenceSinceMs >= SILENCE_SUSTAIN_MS
+            this.silenceWarningEl.toggleClass('igggy-hidden', !sustained)
           }
         }
       } else if (mode === 'processing') {
@@ -560,6 +571,7 @@ export class RecordingView extends ItemView {
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
     this.silenceWarningEl = null  // cleared on transition; paused state has no warning
+    this.silenceSinceMs = null
     this.transition('paused')
   }
 
@@ -574,6 +586,7 @@ export class RecordingView extends ItemView {
     this.stopTimer()
     cancelAnimationFrame(this.rafId)
     this.silenceWarningEl = null  // cleared on stop; stopped state has no warning
+    this.silenceSinceMs = null
 
     this.finalElapsed = this.session.getElapsedSec()
     this.capturedAt = new Date()

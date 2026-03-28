@@ -273,18 +273,26 @@ export class NativeAudioCapture {
     this.crashed = false
   }
 
-  /** Build CLI arguments for the native binary based on platform */
+  /**
+   * Build CLI arguments for the native binary based on platform.
+   *
+   * macOS (audiotee v0.0.7): Supported flags are --sample-rate, --chunk-duration,
+   * --include-processes, --exclude-processes, --mute. Mono output is implicit
+   * when --sample-rate is specified — there is NO --channels flag.
+   *
+   * Validated against: `audiotee --help` (v0.0.7)
+   */
   private buildArgs(sampleRate: number): string[] {
     const platform = process.platform
 
     if (platform === 'darwin') {
-      // AudioTee: --sample-rate <hz> --channels <n>
-      return ['--sample-rate', String(sampleRate), '--channels', String(CHANNELS)]
+      // audiotee: --sample-rate <hz> (mono output implicit)
+      return ['--sample-rate', String(sampleRate)]
     }
 
     if (platform === 'win32') {
-      // audiotee-wasapi: similar args (TBD — Phase 4)
-      return ['--sample-rate', String(sampleRate), '--channels', String(CHANNELS)]
+      // audiotee-wasapi: TBD — Phase 4. Validate actual CLI before wiring.
+      return ['--sample-rate', String(sampleRate)]
     }
 
     // Linux: pw-record or parec — args vary (Phase 4)

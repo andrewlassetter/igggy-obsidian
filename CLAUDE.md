@@ -10,6 +10,23 @@ npm run build     # tsc type-check + esbuild production bundle (no sourcemaps) +
 npm run lint      # eslint on src/ (TypeScript)
 ```
 
+## CI Verification
+
+Before pushing or reporting work as complete, run:
+
+```bash
+npm run check    # lint + test + build (mirrors CI pipeline)
+```
+
+When `package-lock.json` has changed, also verify with `npm ci` (stricter than `npm install` — fails on lock file mismatches, same as CI).
+
+When changing ESLint config, grep for inline `eslint-disable` directives that reference plugins you need to register:
+```bash
+grep -rn "eslint-disable.*@typescript-eslint" src/
+```
+
+When publishing `@igggy/types` or `@igggy/waveform` to npm, always include an `exports` field in `package.json` (required for ESM resolution in vitest/vite).
+
 ## Dev Environment
 
 - **No `.env` file** — Igggy Open mode uses user-provided API keys entered at runtime in Obsidian settings, not build-time config

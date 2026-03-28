@@ -143,7 +143,7 @@ export class IgggyClient {
     })
 
     if (res.status === 401) {
-      throw new IgggyApiError('Unauthorized — check your connection in plugin settings.', 'UNAUTHORIZED', 401)
+      throw new IgggyApiError('Not signed in — sign in from plugin settings.', 'UNAUTHORIZED', 401)
     }
 
     if (res.status === 402) {

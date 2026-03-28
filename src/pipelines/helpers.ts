@@ -7,8 +7,14 @@ import { AUDIO_EXTENSIONS } from '../auth'
 export function friendlyError(message: string, step: string): string {
   const lower = message.toLowerCase()
 
-  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid_api_key')) {
-    return 'invalid API key \u2014 check your key in plugin settings'
+  if (lower.includes('401') || lower.includes('unauthorized') || lower.includes('invalid_api_key') || lower.includes('not signed in')) {
+    if (step === 'uploading audio') {
+      return 'not signed in \u2014 open plugin settings and sign in to your Igggy account'
+    }
+    if (step === 'processing note') {
+      return 'invalid API key \u2014 check your key in plugin settings'
+    }
+    return 'authentication failed \u2014 try signing out and back in from plugin settings'
   }
   if (lower.includes('429') || lower.includes('rate limit') || lower.includes('quota')) {
     return 'API rate limit or quota exceeded \u2014 try again shortly'

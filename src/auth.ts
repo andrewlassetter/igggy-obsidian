@@ -27,14 +27,17 @@ export function createClient(plugin: IgggyPlugin): IgggyClient {
 export function validateKeys(plugin: IgggyPlugin): string | null {
   const { settings } = plugin
 
+  // Auth check — required for all modes (server needs userId for note storage)
+  if (!settings.accessToken) {
+    return 'Igggy: Sign in to your Igggy account \u2014 open plugin settings.'
+  }
+
+  // Starter/Pro — managed keys, no further checks needed
   if (['starter', 'pro'].includes(settings.mode)) {
-    if (!settings.accessToken || !settings.refreshToken) {
-      return 'Igggy: Sign in to your Igggy account. Open plugin settings \u2192 Connection mode.'
-    }
     return null
   }
 
-  // Open mode — keys are required (sent to server per-request)
+  // Open mode — provider keys are required (sent to server per-request)
   if (settings.transcriptionProvider === 'openai' && !settings.openaiKey) {
     return 'Igggy: OpenAI API key required. Open plugin settings to add it.'
   }

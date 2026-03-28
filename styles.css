@@ -1,5 +1,75 @@
 /* Igggy Plugin Styles */
 
+/* ── Design Token Bridge ───────────────────────────────────────────────────────
+   Maps --ig-* tokens to Obsidian CSS variables with fallbacks.
+   Source of truth: @igggy/tokens (packages/tokens/).
+   Regenerate: cd ../igggy-web/packages/tokens && npm run generate
+   ──────────────────────────────────────────────────────────────────────────── */
+
+.igggy-recording-view {
+  /* Text — map to Obsidian's text hierarchy */
+  --ig-text-primary: var(--text-normal, #e5e5e5);
+  --ig-text-secondary: var(--text-muted, #a3a3a3);
+  --ig-text-tertiary: var(--text-faint, #737373);
+  --ig-text-quaternary: #525252;
+  --ig-text-error: #f87171;
+  --ig-text-success: #86efac;
+  --ig-text-hover: var(--text-accent-hover, #ffffff);
+
+  /* Backgrounds — map to Obsidian's surface hierarchy */
+  --ig-bg-base: var(--background-primary, #0a0a0a);
+  --ig-bg-elevated: var(--background-secondary, #141414);
+  --ig-bg-subtle: var(--background-modifier-form-field, rgba(255, 255, 255, 0.05));
+  --ig-bg-hover: var(--background-modifier-hover, rgba(255, 255, 255, 0.10));
+  --ig-bg-active: rgba(255, 255, 255, 0.15);
+
+  /* Borders */
+  --ig-border-subtle: var(--background-modifier-border, rgba(255, 255, 255, 0.05));
+  --ig-border-default: var(--background-modifier-border, rgba(255, 255, 255, 0.10));
+  --ig-border-emphasis: rgba(255, 255, 255, 0.20);
+
+  /* Overlays */
+  --ig-overlay-medium: rgba(0, 0, 0, 0.50);
+  --ig-overlay-heavy: rgba(0, 0, 0, 0.70);
+
+  /* Spacing */
+  --ig-space-1: 4px;
+  --ig-space-2: 8px;
+  --ig-space-3: 12px;
+  --ig-space-4: 16px;
+  --ig-space-6: 24px;
+  --ig-space-8: 32px;
+
+  /* Typography */
+  --ig-text-xxs: 10px;
+  --ig-text-xs: 12px;
+  --ig-text-base: 14px;
+  --ig-text-lg: 16px;
+  --ig-text-xl: 20px;
+  --ig-text-xxl: 28px;
+  --ig-font-normal: 400;
+  --ig-font-medium: 500;
+  --ig-font-semibold: 600;
+
+  /* Border Radius */
+  --ig-radius-sm: 4px;
+  --ig-radius-md: 8px;
+  --ig-radius-lg: 12px;
+  --ig-radius-full: 9999px;
+
+  /* Sizing */
+  --ig-tap-mobile: 44px;
+  --ig-tap-desktop: 32px;
+  --ig-icon-sm: 14px;
+  --ig-icon-md: 16px;
+  --ig-icon-lg: 18px;
+  --ig-icon-xl: 20px;
+
+  /* Transitions */
+  --ig-duration-fast: 150ms;
+  --ig-duration-normal: 300ms;
+}
+
 /* ── Utility ────────────────────────────────────────────────────────────────── */
 
 .igggy-hidden { display: none; }
@@ -62,29 +132,29 @@
 .igggy-recording-view {
   display: flex;
   flex-direction: column;
-  padding: 16px 12px;
-  gap: 16px;
+  padding: var(--ig-space-4) var(--ig-space-3);
+  gap: var(--ig-space-4);
   height: 100%;
   overflow-y: auto;
   box-sizing: border-box;
 }
 
 .igggy-rv-header {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: var(--ig-space-2);
+  border-bottom: 1px solid var(--ig-border-default);
 }
 
 .igggy-rv-title {
   font-size: 0.85em;
-  font-weight: 600;
+  font-weight: var(--ig-font-semibold);
   letter-spacing: 0.03em;
-  color: var(--text-normal);
+  color: var(--ig-text-primary);
 }
 
 .igggy-rv-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--ig-space-4);
   flex: 1;
 }
 
@@ -92,15 +162,15 @@
 
 .igggy-rv-btn-primary {
   width: 100%;
-  padding: 10px 16px;
+  padding: 10px var(--ig-space-4);
   background: var(--interactive-accent);
   color: var(--text-on-accent);
   border: none;
-  border-radius: 6px;
+  border-radius: var(--ig-radius-md);
   font-size: 0.85em;
-  font-weight: 500;
+  font-weight: var(--ig-font-medium);
   cursor: pointer;
-  transition: opacity 0.15s;
+  transition: opacity var(--ig-duration-fast);
 }
 
 .igggy-rv-btn-primary:hover { opacity: 0.85; }
@@ -108,20 +178,20 @@
 
 .igggy-rv-btn-secondary {
   width: 100%;
-  padding: 8px 16px;
-  background: var(--background-modifier-form-field);
-  color: var(--text-muted);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  padding: var(--ig-space-2) var(--ig-space-4);
+  background: var(--ig-bg-subtle);
+  color: var(--ig-text-secondary);
+  border: 1px solid var(--ig-border-default);
+  border-radius: var(--ig-radius-md);
   font-size: 0.85em;
-  font-weight: 500;
+  font-weight: var(--ig-font-medium);
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  transition: color var(--ig-duration-fast), background var(--ig-duration-fast);
 }
 
 .igggy-rv-btn-secondary:hover {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
+  background: var(--ig-bg-hover);
+  color: var(--ig-text-primary);
 }
 
 /* Icon sizing inside buttons */

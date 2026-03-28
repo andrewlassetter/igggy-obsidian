@@ -1,7 +1,35 @@
-import { App, PluginSettingTab, Setting } from 'obsidian'
+import { App, PluginSettingTab, Setting, AbstractInputSuggest, TFolder } from 'obsidian'
 import type IgggyPlugin from './main'
 import { reindexVault } from './sync/reindex'
 import { TASKS_ENABLED } from './feature-flags'
+
+// ── Vault folder suggest ──────────────────────────────────────────────────────
+
+/**
+ * Input suggest that shows all vault folders on focus and filters as you type.
+ * Standard Obsidian pattern used by Templater, Daily Notes, etc.
+ */
+class FolderSuggest extends AbstractInputSuggest<TFolder> {
+  getSuggestions(query: string): TFolder[] {
+    const folders = this.app.vault.getAllLoadedFiles()
+      .filter((f): f is TFolder => f instanceof TFolder)
+      .filter((f) => f.path !== '/') // exclude vault root
+      .sort((a, b) => a.path.localeCompare(b.path))
+
+    if (!query) return folders
+    const lower = query.toLowerCase()
+    return folders.filter((f) => f.path.toLowerCase().includes(lower))
+  }
+
+  renderSuggestion(folder: TFolder, el: HTMLElement): void {
+    el.setText(folder.path)
+  }
+
+  selectSuggestion(folder: TFolder): void {
+    this.setValue(folder.path)
+    this.close()
+  }
+}
 
 const APP_URL = 'https://app.igggy.ai'
 
@@ -43,6 +71,8 @@ interface ConfirmableFieldConfig {
   placeholder: string
   validate?: (value: string) => string | null
   sanitize?: (value: string) => string
+  /** Attach vault folder suggest to the text input (shows all folders on focus, filters on type) */
+  folderSuggest?: boolean
 }
 
 export class IgggySettingsTab extends PluginSettingTab {
@@ -77,6 +107,7 @@ export class IgggySettingsTab extends PluginSettingTab {
         if (config.isPassword) text.inputEl.type = 'password'
         text.setPlaceholder(config.placeholder)
         text.onChange((value) => { inputValue = value })
+        if (config.folderSuggest) new FolderSuggest(this.app, text.inputEl)
       })
 
       setting.addButton((btn) =>
@@ -132,6 +163,7 @@ export class IgggySettingsTab extends PluginSettingTab {
             text.onChange((value) => { inputValue = value })
             // For non-password fields, initialize with current value
             if (!config.isPassword) inputValue = currentValue
+            if (config.folderSuggest) new FolderSuggest(this.app, text.inputEl)
           })
 
           setting.addButton((saveBtn) =>
@@ -254,6 +286,7 @@ export class IgggySettingsTab extends PluginSettingTab {
       isPassword: false,
       placeholder: 'Igggy',
       sanitize: sanitizeFolder,
+      folderSuggest: true,
     })
 
     new Setting(containerEl)
